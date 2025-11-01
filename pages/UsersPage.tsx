@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import UserEditModal from '../components/UserEditModal';
+import { useToast } from '../contexts/ToastContext';
+import Spinner from '../components/Spinner';
 
 export interface User {
   id: string;
@@ -24,6 +26,7 @@ const UsersPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<PaymentStatusFilter>('all');
   const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
+  const { addToast } = useToast();
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -32,10 +35,11 @@ const UsersPage: React.FC = () => {
       setLoading(false);
     }, (error) => {
       console.error("Error fetching users:", error);
+      addToast('Error fetching users.', 'error');
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [addToast]);
 
   const handleEditClick = (user: User) => {
     setSelectedUser(user);
@@ -49,44 +53,51 @@ const UsersPage: React.FC = () => {
 
   const handleSaveUser = async (updatedUser: User) => {
     if (!updatedUser.id) return;
-    setActionLoading(prev => ({...prev, [updatedUser.id]: true}));
+    setActionLoading(prev => ({...prev, [`save_${updatedUser.id}`]: true}));
     try {
       const userRef = doc(db, 'users', updatedUser.id);
-      await updateDoc(userRef, {
-        username: updatedUser.username,
-        phone: updatedUser.phone,
-        balance: updatedUser.balance,
+      await runTransaction(db, async (transaction) => {
+          transaction.update(userRef, {
+            username: updatedUser.username,
+            phone: updatedUser.phone,
+            balance: updatedUser.balance,
+          });
       });
-      console.log('User updated successfully');
+      addToast('User updated successfully!', 'success');
       handleCloseModal();
     } catch (error) {
       console.error('Error updating user:', error);
+      addToast('Failed to update user.', 'error');
     } finally {
-       setActionLoading(prev => ({...prev, [updatedUser.id]: false}));
+       setActionLoading(prev => ({...prev, [`save_${updatedUser.id}`]: false}));
     }
   };
   
   const handleVerifyPayment = async (userId: string) => {
-    setActionLoading(prev => ({...prev, [userId]: true}));
+    setActionLoading(prev => ({...prev, [`verify_${userId}`]: true}));
     try {
         const userRef = doc(db, 'users', userId);
         await updateDoc(userRef, { isPaid: true, paymentStatus: 'verified' });
+        addToast('Payment verified!', 'success');
     } catch (error) {
         console.error("Error verifying payment:", error);
+        addToast('Failed to verify payment.', 'error');
     } finally {
-        setActionLoading(prev => ({...prev, [userId]: false}));
+        setActionLoading(prev => ({...prev, [`verify_${userId}`]: false}));
     }
   };
 
   const handleRejectPayment = async (userId: string) => {
-    setActionLoading(prev => ({...prev, [userId]: true}));
+    setActionLoading(prev => ({...prev, [`reject_${userId}`]: true}));
     try {
         const userRef = doc(db, 'users', userId);
         await updateDoc(userRef, { isPaid: false, paymentStatus: 'rejected', submittedTransactionId: null });
+        addToast('Payment rejected.', 'success');
     } catch (error) {
         console.error("Error rejecting payment:", error);
+        addToast('Failed to reject payment.', 'error');
     } finally {
-        setActionLoading(prev => ({...prev, [userId]: false}));
+        setActionLoading(prev => ({...prev, [`reject_${userId}`]: false}));
     }
   };
 
@@ -129,8 +140,7 @@ const UsersPage: React.FC = () => {
         </select>
       </div>
 
-      {/* Desktop Table */}
-      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden hidden md:block">
+      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full leading-normal">
             <thead>
@@ -153,7 +163,7 @@ const UsersPage: React.FC = () => {
                     <p className="text-gray-900 dark:text-white whitespace-no-wrap">Rs {user.balance.toFixed(2)}</p>
                   </td>
                   <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
-                    <span className={`relative inline-block px-3 py-1 font-semibold leading-tight capitalize ${
+                    <span className={`relative inline-block px-3 py-1 font-semibold leading-tight ${
                         user.paymentStatus === 'verified' ? 'text-green-900 dark:text-green-100' :
                         user.paymentStatus === 'pending' ? 'text-yellow-900 dark:text-yellow-100' :
                         user.paymentStatus === 'rejected' ? 'text-red-900 dark:text-red-100' : 'text-gray-700 dark:text-gray-100'}`}>
@@ -165,12 +175,16 @@ const UsersPage: React.FC = () => {
                       <span className="relative">{user.paymentStatus}</span>
                     </span>
                   </td>
-                  <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
-                    <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-200 mr-4 font-medium" disabled={actionLoading[user.id]}>Edit</button>
+                  <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm flex items-center space-x-2">
+                    <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-200" disabled={actionLoading[`save_${user.id}`]}>Edit</button>
                     {user.paymentStatus === 'pending' && (
                         <>
-                        <button onClick={() => handleVerifyPayment(user.id)} className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-200 mr-4 font-medium" disabled={actionLoading[user.id]}>Verify</button>
-                        <button onClick={() => handleRejectPayment(user.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-200 font-medium" disabled={actionLoading[user.id]}>Reject</button>
+                        <button onClick={() => handleVerifyPayment(user.id)} className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-200 flex items-center" disabled={actionLoading[`verify_${user.id}`]}>
+                          {actionLoading[`verify_${user.id}`] && <Spinner />} Verify
+                        </button>
+                        <button onClick={() => handleRejectPayment(user.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-200 flex items-center" disabled={actionLoading[`reject_${user.id}`]}>
+                           {actionLoading[`reject_${user.id}`] && <Spinner />} Reject
+                        </button>
                         </>
                     )}
                   </td>
@@ -180,53 +194,12 @@ const UsersPage: React.FC = () => {
           </table>
         </div>
       </div>
-      
-      {/* Mobile Card View */}
-      <div className="md:hidden grid grid-cols-1 gap-4">
-        {filteredUsers.length > 0 ? filteredUsers.map((user) => (
-            <div key={user.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-3">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-gray-900 dark:text-white font-semibold">{user.username || 'N/A'}</p>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">{user.email}</p>
-                        {user.phone && <p className="text-gray-600 dark:text-gray-400 text-sm">{user.phone}</p>}
-                    </div>
-                     <span className={`relative inline-block px-3 py-1 font-semibold leading-tight capitalize text-xs ${
-                        user.paymentStatus === 'verified' ? 'text-green-900 dark:text-green-100' :
-                        user.paymentStatus === 'pending' ? 'text-yellow-900 dark:text-yellow-100' :
-                        user.paymentStatus === 'rejected' ? 'text-red-900 dark:text-red-100' : 'text-gray-700 dark:text-gray-100'}`}>
-                      <span aria-hidden className={`absolute inset-0 ${
-                        user.paymentStatus === 'verified' ? 'bg-green-200 dark:bg-green-700' :
-                        user.paymentStatus === 'pending' ? 'bg-yellow-200 dark:bg-yellow-700' :
-                        user.paymentStatus === 'rejected' ? 'bg-red-200 dark:bg-red-700' : 'bg-gray-200 dark:bg-gray-700'
-                      } opacity-50 rounded-full`}></span>
-                      <span className="relative">{user.paymentStatus}</span>
-                    </span>
-                </div>
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500 dark:text-gray-400">Balance</span>
-                        <span className="text-gray-900 dark:text-white font-medium">Rs {user.balance.toFixed(2)}</span>
-                    </div>
-                </div>
-                <div className="flex items-center justify-end gap-3 pt-2">
-                    <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-200 font-medium text-sm" disabled={actionLoading[user.id]}>Edit</button>
-                    {user.paymentStatus === 'pending' && (
-                        <>
-                        <button onClick={() => handleVerifyPayment(user.id)} className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-200 font-medium text-sm" disabled={actionLoading[user.id]}>Verify</button>
-                        <button onClick={() => handleRejectPayment(user.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-200 font-medium text-sm" disabled={actionLoading[user.id]}>Reject</button>
-                        </>
-                    )}
-                </div>
-            </div>
-        )) : <p className="text-center text-gray-500 dark:text-gray-400 py-4">No users found.</p>}
-      </div>
-
       {isModalOpen && selectedUser && (
         <UserEditModal 
           user={selectedUser}
           onClose={handleCloseModal}
           onSave={handleSaveUser}
+          isLoading={actionLoading[`save_${selectedUser.id}`]}
         />
       )}
     </div>

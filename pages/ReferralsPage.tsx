@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, doc, getDoc, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
+import { useToast } from '../contexts/ToastContext';
+import Spinner from '../components/Spinner';
 
 interface Referral {
     id: string;
@@ -18,6 +20,7 @@ const ReferralsPage: React.FC = () => {
     const [referrals, setReferrals] = useState<Referral[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
+    const { addToast } = useToast();
 
     useEffect(() => {
         const q = query(collection(db, 'referrals'), where('status', '==', 'pending_bonus'));
@@ -40,11 +43,12 @@ const ReferralsPage: React.FC = () => {
             setLoading(false);
         }, (error) => {
             console.error("Error fetching referrals:", error);
+            addToast('Error fetching referrals.', 'error');
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, []);
+    }, [addToast]);
     
     const handleApproveBonus = async (referral: Referral) => {
         setActionLoading(prev => ({...prev, [referral.id]: true}));
@@ -61,9 +65,10 @@ const ReferralsPage: React.FC = () => {
                 transaction.update(referrerRef, { balance: newBalance });
                 transaction.update(referralRef, { status: 'approved' });
             });
+            addToast('Referral bonus approved!', 'success');
         } catch (error) {
             console.error("Referral approval transaction failed:", error);
-            alert("Failed to approve referral bonus.");
+            addToast("Failed to approve referral bonus.", 'error');
         } finally {
             setActionLoading(prev => ({...prev, [referral.id]: false}));
         }
@@ -74,9 +79,10 @@ const ReferralsPage: React.FC = () => {
         try {
             const referralRef = doc(db, 'referrals', referralId);
             await updateDoc(referralRef, { status: 'rejected' });
+            addToast('Referral bonus rejected.', 'success');
         } catch (error) {
             console.error("Error rejecting referral bonus:", error);
-            alert("Failed to reject referral bonus.");
+            addToast("Failed to reject referral bonus.", 'error');
         } finally {
             setActionLoading(prev => ({...prev, [referralId]: false}));
         }
@@ -89,9 +95,7 @@ const ReferralsPage: React.FC = () => {
     return (
         <div className="container mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Manage Referral Bonuses</h1>
-            
-            {/* Desktop Table */}
-            <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden hidden md:block">
+            <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="min-w-full leading-normal">
                         <thead>
@@ -122,12 +126,12 @@ const ReferralsPage: React.FC = () => {
                                     <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
                                         <p className="text-gray-900 dark:text-white whitespace-no-wrap">Rs {ref.bonusAmount.toFixed(2)}</p>
                                     </td>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
-                                        <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-xs mr-2 disabled:bg-gray-400">
-                                            Approve Bonus
+                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm space-x-2">
+                                        <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-xs disabled:bg-gray-400 inline-flex items-center">
+                                            {actionLoading[ref.id] && <Spinner />} Approve Bonus
                                         </button>
-                                        <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs disabled:bg-gray-400">
-                                            Reject
+                                        <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs disabled:bg-gray-400 inline-flex items-center">
+                                            {actionLoading[ref.id] && <Spinner />} Reject
                                         </button>
                                     </td>
                                 </tr>
@@ -142,37 +146,6 @@ const ReferralsPage: React.FC = () => {
                     </table>
                 </div>
             </div>
-
-            {/* Mobile Card View */}
-            <div className="md:hidden grid grid-cols-1 gap-4">
-                {referrals.length > 0 ? referrals.map((ref) => (
-                    <div key={ref.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-3">
-                        <div>
-                             <p className="text-sm text-gray-500 dark:text-gray-400">Referrer</p>
-                             <p className="text-gray-900 dark:text-white font-medium">{ref.referrerEmail}</p>
-                        </div>
-                         <div>
-                             <p className="text-sm text-gray-500 dark:text-gray-400">Referred User</p>
-                             <p className="text-gray-900 dark:text-white font-medium">{ref.referredEmail}</p>
-                        </div>
-                        <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-gray-500 dark:text-gray-400">Bonus Amount</span>
-                                <span className="text-gray-900 dark:text-white font-medium">Rs {ref.bonusAmount.toFixed(2)}</span>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-2 pt-2">
-                             <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-xs mr-2 disabled:bg-gray-400">
-                                Approve Bonus
-                            </button>
-                            <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs disabled:bg-gray-400">
-                                Reject
-                            </button>
-                        </div>
-                    </div>
-                )) : <p className="text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg shadow p-4">No pending referral bonuses.</p>}
-            </div>
-
         </div>
     );
 };

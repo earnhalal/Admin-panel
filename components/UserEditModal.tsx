@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../pages/UsersPage';
+import Spinner from './Spinner';
 
 interface UserEditModalProps {
   user: User;
   onClose: () => void;
   onSave: (user: User) => void;
+  isLoading?: boolean;
 }
 
-const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) => {
+const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, isLoading }) => {
   const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
   const [balance, setBalance] = useState(0);
@@ -69,13 +71,16 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
               type="button"
               onClick={onClose}
               className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2"
+              disabled={isLoading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded inline-flex items-center disabled:bg-indigo-400"
+              disabled={isLoading}
             >
+              {isLoading && <Spinner />}
               Save Changes
             </button>
           </div>

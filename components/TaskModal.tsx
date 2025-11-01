@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Task } from '../pages/TasksPage';
+import Spinner from './Spinner';
 
 interface TaskModalProps {
   task: Task | null;
   onClose: () => void;
   onSave: (task: Omit<Task, 'id'>) => void;
+  isLoading?: boolean;
 }
 
-const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
+const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave, isLoading }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [reward, setReward] = useState(0);
@@ -87,13 +89,16 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave }) => {
               type="button"
               onClick={onClose}
               className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2"
+              disabled={isLoading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded inline-flex items-center disabled:bg-indigo-400"
+              disabled={isLoading}
             >
+              {isLoading && <Spinner />}
               Save
             </button>
           </div>

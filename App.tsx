@@ -8,25 +8,29 @@ import TasksPage from './pages/TasksPage';
 import WithdrawalsPage from './pages/WithdrawalsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import ReferralsPage from './pages/ReferralsPage';
+import ToastContainer from './components/ToastContainer';
 
 const App: React.FC = () => {
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<AdminLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="users" element={<UsersPage />} />
-            <Route path="tasks" element={<TasksPage />} />
-            <Route path="withdrawals" element={<WithdrawalsPage />} />
-            <Route path="referrals" element={<ReferralsPage />} />
+    <>
+      <ToastContainer />
+      <HashRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<AdminLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="users" element={<UsersPage />} />
+              <Route path="tasks" element={<TasksPage />} />
+              <Route path="withdrawals" element={<WithdrawalsPage />} />
+              <Route path="referrals" element={<ReferralsPage />} />
+            </Route>
           </Route>
-        </Route>
-         <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    </HashRouter>
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </HashRouter>
+    </>
   );
 };
 
