@@ -1,0 +1,5 @@
+{
+  "name": "React Admin Panel with Firebase",
+  "description": "A fully functional admin panel with Firebase Authentication and Firestore. Includes a real-time dashboard, user management with payment verification, task and submission management, withdrawal request processing, and referral bonus approvals. Uses Firestore Transactions for secure balance updates. Built with React, TypeScript, and Tailwind CSS.",
+  "requestFramePermissions": []
+}
