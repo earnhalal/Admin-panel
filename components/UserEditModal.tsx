@@ -30,7 +30,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
         <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Edit User: {user.email}</h2>
         <form onSubmit={handleSubmit}>

@@ -4,6 +4,8 @@ import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
+import { CheckIcon } from '../components/icons/CheckIcon';
+import { XIcon } from '../components/icons/XIcon';
 
 interface Referral {
     id: string;
@@ -95,7 +97,14 @@ const ReferralsPage: React.FC = () => {
     return (
         <div className="container mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Manage Referral Bonuses</h1>
-            <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
+            {referrals.length === 0 ? (
+                 <p className="text-center py-10 text-gray-500 dark:text-gray-400">
+                    No pending referral bonuses found.
+                </p>
+            ) : (
+            <>
+            {/* Desktop Table */}
+            <div className="hidden md:block bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="min-w-full leading-normal">
                         <thead>
@@ -115,7 +124,7 @@ const ReferralsPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {referrals.length > 0 ? referrals.map((ref) => (
+                            {referrals.map((ref) => (
                                 <tr key={ref.id}>
                                     <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
                                         <p className="text-gray-900 dark:text-white whitespace-no-wrap">{ref.referrerEmail}</p>
@@ -126,26 +135,51 @@ const ReferralsPage: React.FC = () => {
                                     <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
                                         <p className="text-gray-900 dark:text-white whitespace-no-wrap">Rs {ref.bonusAmount.toFixed(2)}</p>
                                     </td>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm space-x-2">
-                                        <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-xs disabled:bg-gray-400 inline-flex items-center">
-                                            {actionLoading[ref.id] && <Spinner />} Approve Bonus
-                                        </button>
-                                        <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs disabled:bg-gray-400 inline-flex items-center">
-                                            {actionLoading[ref.id] && <Spinner />} Reject
-                                        </button>
+                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400 transition-colors">
+                                                {actionLoading[ref.id] ? <Spinner /> : <CheckIcon className="w-4 h-4" />} Approve
+                                            </button>
+                                            <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400 transition-colors">
+                                                {actionLoading[ref.id] ? <Spinner /> : <XIcon className="w-4 h-4" />} Reject
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
-                            )) : (
-                                <tr>
-                                    <td colSpan={4} className="text-center py-10 text-gray-500 dark:text-gray-400">
-                                        No pending referral bonuses found.
-                                    </td>
-                                </tr>
-                            )}
+                            ))}
                         </tbody>
                     </table>
                 </div>
             </div>
+            {/* Mobile Cards */}
+            <div className="md:hidden grid grid-cols-1 gap-4">
+                {referrals.map(ref => (
+                     <div key={ref.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 space-y-3">
+                        <div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Referrer</p>
+                            <p className="font-semibold text-gray-900 dark:text-white">{ref.referrerEmail}</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Referred User</p>
+                            <p className="font-semibold text-gray-900 dark:text-white">{ref.referredEmail}</p>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                            <p className="text-gray-500 dark:text-gray-400">Bonus Amount:</p>
+                            <p className="font-semibold text-gray-900 dark:text-white">Rs {ref.bonusAmount.toFixed(2)}</p>
+                        </div>
+                        <div className="border-t border-gray-200 dark:border-gray-700 pt-3 flex flex-col sm:flex-row items-center gap-2">
+                            <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400 transition-colors">
+                                {actionLoading[ref.id] ? <Spinner /> : <><CheckIcon className="w-4 h-4" /> Approve Bonus</>}
+                            </button>
+                            <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400 transition-colors">
+                                {actionLoading[ref.id] ? <Spinner /> : <><XIcon className="w-4 h-4" /> Reject</>}
+                            </button>
+                        </div>
+                     </div>
+                ))}
+            </div>
+            </>
+            )}
         </div>
     );
 };
