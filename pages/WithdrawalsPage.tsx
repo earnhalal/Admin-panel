@@ -36,6 +36,7 @@ interface RejectionPayload {
 interface ApprovalPayload {
     id: string;
     userId: string;
+    amount: number;
 }
 
 type SortConfig = { key: keyof WithdrawalRequest; direction: 'ascending' | 'descending' } | null;
@@ -129,26 +130,53 @@ const WithdrawalsPage: React.FC = () => {
   };
 
 
-  const openApprovalModal = (id: string, userId: string) => {
-    setApprovalPayload({ id, userId });
+  const openApprovalModal = (id: string, userId: string, amount: number) => {
+    setApprovalPayload({ id, userId, amount });
     setIsTxnModalOpen(true);
   };
   
   const handleConfirmApproval = async (enteredTransactionId: string) => {
     if (!approvalPayload) return;
-    const { id } = approvalPayload;
+    const { id, userId, amount } = approvalPayload;
 
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-      const withdrawalRef = doc(db, 'withdrawalRequests', id);
-      await updateDoc(withdrawalRef, {
-        status: 'Approved',
-        transactionId: enteredTransactionId,
+      await runTransaction(db, async (transaction) => {
+          const settingsRef = doc(db, 'settings', 'global');
+          const settingsDoc = await transaction.get(settingsRef);
+          const withdrawalFeeRate = settingsDoc.exists() ? (settingsDoc.data().withdrawalFeeRate || 0) : 0;
+          
+          const feeAmount = (amount * withdrawalFeeRate) / 100;
+          
+          const withdrawalRef = doc(db, 'withdrawalRequests', id);
+          const userRef = doc(db, 'users', userId);
+          const userDoc = await transaction.get(userRef);
+          
+          if (!userDoc.exists()) throw new Error("User not found.");
+          if (userDoc.data().balance < amount) throw new Error("Insufficient balance.");
+          
+          const newBalance = userDoc.data().balance - amount;
+          
+          transaction.update(userRef, { balance: newBalance });
+          transaction.update(withdrawalRef, { status: 'Approved', transactionId: enteredTransactionId });
+
+          if (feeAmount > 0) {
+              const revenueRef = collection(db, 'revenueTransactions');
+              transaction.set(doc(revenueRef), {
+                  adminFeeAmount: feeAmount,
+                  originalAmount: amount,
+                  sourceUser: userId,
+                  timestamp: Timestamp.now(),
+                  transactionType: 'withdrawal_fee',
+                  relatedDocId: id,
+              });
+          }
       });
       addToast('Withdrawal approved successfully!', 'success');
     } catch (error) {
+      const message = error instanceof Error ? error.message : "An unknown error occurred.";
+      addToast(`Failed to approve withdrawal: ${message}`, 'error');
       console.error('Approval failed:', error);
-      addToast('Failed to approve withdrawal.', 'error');
     } finally {
       setActionLoading(prev => ({ ...prev, [id]: false }));
       setIsTxnModalOpen(false);
@@ -173,12 +201,14 @@ const WithdrawalsPage: React.FC = () => {
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("User not found.");
             
-            const newBalance = userDoc.data().balance + amount;
+            // This logic assumes balance was deducted on request. If not, no need to add back.
+            // Let's assume balance is only deducted on approval for consistency.
+            // const newBalance = userDoc.data().balance + amount;
+            // transaction.update(userRef, { balance: newBalance });
             
-            transaction.update(userRef, { balance: newBalance });
             transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: reason });
         });
-        addToast('Withdrawal rejected and funds returned.', 'success');
+        addToast('Withdrawal rejected.', 'success');
     } catch (error) {
         addToast(`Failed to reject withdrawal.`, 'error');
     } finally {
@@ -191,25 +221,18 @@ const WithdrawalsPage: React.FC = () => {
   const handleBulkReject = async () => {
       if (selectedRequests.size === 0) return;
       setActionLoading(prev => ({ ...prev, bulkReject: true }));
-      const userBalanceUpdates = new Map<string, number>();
+      
+      const batch = writeBatch(db);
+      selectedRequests.forEach(reqId => {
+          const request = withdrawals.find(w => w.id === reqId);
+          if (request) {
+              const withdrawalRef = doc(db, 'withdrawalRequests', reqId);
+              batch.update(withdrawalRef, { status: 'Rejected', rejectionReason: 'Bulk rejected by admin.' });
+          }
+      });
 
       try {
-        for (const reqId of selectedRequests) {
-            const request = withdrawals.find(w => w.id === reqId);
-            if (!request) continue;
-            
-            await runTransaction(db, async (transaction) => {
-                const withdrawalRef = doc(db, 'withdrawalRequests', reqId);
-                const userRef = doc(db, 'users', request.userId);
-                const userDoc = await transaction.get(userRef);
-
-                if (userDoc.exists()) {
-                    const newBalance = (userDoc.data().balance || 0) + request.amount;
-                    transaction.update(userRef, { balance: newBalance });
-                }
-                transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: 'Bulk rejected by admin.' });
-            });
-        }
+        await batch.commit();
         addToast(`${selectedRequests.size} requests rejected.`, 'success');
         setSelectedRequests(new Set());
       } catch (error) {
@@ -284,7 +307,7 @@ const WithdrawalsPage: React.FC = () => {
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>Rs {req.amount.toFixed(2)}</p></td>
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>{req.requestedAt.toLocaleString()}</p></td>
                             {filter !== 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="break-all">{req.transactionId || 'N/A'}</p>{req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}</td>}
-                            {filter === 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req.id, req.userId)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
+                            {filter === 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
                         </tr>
                         ))}
                     </tbody>
@@ -319,7 +342,7 @@ const WithdrawalsPage: React.FC = () => {
                          )}
                         {filter === 'Pending' && (
                             <div className="mt-4 flex justify-end gap-2">
-                                <button onClick={() => openApprovalModal(req.id, req.userId)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
+                                <button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
                                 <button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
                             </div>
                         )}

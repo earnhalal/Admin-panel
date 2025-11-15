@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, runTransaction, getDoc, where, query, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, runTransaction, getDoc, where, query, writeBatch, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import TaskModal from '../components/TaskModal';
 import AiTaskModal from '../components/AiTaskModal';
@@ -149,9 +149,49 @@ const TasksPage: React.FC = () => {
   const handleToggleStatus = async (task: Task) => {
     // ... (existing implementation)
   };
-  const handleApproveRequest = async (taskId: string) => {
-    // ... (existing implementation)
+  
+  const handleApproveRequest = async (task: Task) => {
+    setActionLoading(prev => ({...prev, [task.id]: true}));
+    try {
+        await runTransaction(db, async (transaction) => {
+            const settingsRef = doc(db, 'settings', 'global');
+            const settingsDoc = await transaction.get(settingsRef);
+            const listingFee = settingsDoc.exists() ? (settingsDoc.data().taskListingFee || 0) : 0;
+
+            if (!task.createdBy) throw new Error("Task creator not found.");
+            
+            const userRef = doc(db, 'users', task.createdBy);
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists()) throw new Error("Task creator not found.");
+            if (userDoc.data().balance < listingFee) throw new Error("Creator has insufficient balance for listing fee.");
+
+            const newBalance = userDoc.data().balance - listingFee;
+            transaction.update(userRef, { balance: newBalance });
+
+            const taskRef = doc(db, 'tasks', task.id);
+            transaction.update(taskRef, { status: 'active' });
+
+            if (listingFee > 0) {
+                const revenueRef = collection(db, 'revenueTransactions');
+                transaction.set(doc(revenueRef), {
+                    adminFeeAmount: listingFee,
+                    originalAmount: task.reward,
+                    sourceUser: task.createdBy,
+                    timestamp: Timestamp.now(),
+                    transactionType: 'listing_fee',
+                    relatedDocId: task.id,
+                });
+            }
+        });
+        addToast("Task request approved and listing fee charged.", "success");
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Failed to approve task request: ${message}`, "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [task.id]: false}));
+    }
   };
+
   const openRejectConfirm = (id: string) => {
     setRequestToReject(id);
     setIsRejectConfirmOpen(true);
@@ -159,8 +199,47 @@ const TasksPage: React.FC = () => {
   const handleRejectRequest = async () => {
     // ... (existing implementation)
   };
+  
   const handleApproveSubmission = async (submission: UserTask) => {
-    // ... (existing implementation)
+    setActionLoading(prev => ({...prev, [submission.id]: true}));
+    try {
+        await runTransaction(db, async (transaction) => {
+            const settingsRef = doc(db, 'settings', 'global');
+            const settingsDoc = await transaction.get(settingsRef);
+            const commissionRate = settingsDoc.exists() ? (settingsDoc.data().taskCommissionRate || 0) : 0;
+            
+            const reward = submission.taskReward || 0;
+            const commission = (reward * commissionRate) / 100;
+            const netReward = reward - commission;
+
+            const userRef = doc(db, 'users', submission.userId);
+            const submissionRef = doc(db, 'userTasks', submission.id);
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists()) throw new Error("User document not found!");
+            
+            const newBalance = userDoc.data().balance + netReward;
+            transaction.update(userRef, { balance: newBalance });
+            transaction.update(submissionRef, { status: 'approved' });
+
+             if (commission > 0) {
+                const revenueRef = collection(db, 'revenueTransactions');
+                transaction.set(doc(revenueRef), {
+                    adminFeeAmount: commission,
+                    originalAmount: reward,
+                    sourceUser: submission.userId,
+                    timestamp: Timestamp.now(),
+                    transactionType: 'task_commission',
+                    relatedDocId: submission.id,
+                });
+            }
+        });
+        addToast("Submission approved successfully!", "success");
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Approval failed: ${message}`, "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [submission.id]: false}));
+    }
   };
   const handleRejectSubmission = async (submissionId: string) => {
     // ... (existing implementation)
@@ -185,25 +264,22 @@ const TasksPage: React.FC = () => {
   
   const handleBulkSubmissionAction = async (action: 'approve' | 'reject') => {
       setActionLoading({ ...actionLoading, bulkSubmissions: true });
-      const batch = writeBatch(db);
       const updates: Promise<void>[] = [];
 
       for (const subId of selectedSubmissions) {
           const submission = submissions.find(s => s.id === subId);
           if (!submission) continue;
 
-          const submissionRef = doc(db, 'userTasks', subId);
           if (action === 'approve') {
-              // Transactions are needed for balance updates, so handle them individually.
               updates.push(handleApproveSubmission(submission));
           } else {
-              batch.update(submissionRef, { status: 'rejected' });
+              const submissionRef = doc(db, 'userTasks', subId);
+              updates.push(updateDoc(submissionRef, { status: 'rejected' }));
           }
       }
       
       try {
-          if (action === 'reject') await batch.commit();
-          if (action === 'approve') await Promise.all(updates);
+          await Promise.all(updates);
           addToast(`Successfully ${action}d ${selectedSubmissions.size} submissions.`, 'success');
           setSelectedSubmissions(new Set());
       } catch (error) {
@@ -248,7 +324,7 @@ const TasksPage: React.FC = () => {
                         <div className="flex justify-between items-center mt-4">
                             <span className="font-bold text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
                             <div className="flex gap-2">
-                                <button onClick={() => handleApproveRequest(task.id)} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
+                                <button onClick={() => handleApproveRequest(task)} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
                                 <button onClick={() => openRejectConfirm(task.id)} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
                             </div>
                         </div>

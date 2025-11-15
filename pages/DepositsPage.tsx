@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // FIX: Import `updateDoc` to resolve 'Cannot find name' error.
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
@@ -111,23 +111,47 @@ const DepositsPage: React.FC = () => {
     setIsApproveConfirmOpen(true);
   };
 
-  const handleConfirmApprove = async () => {
-    if (!requestToApprove) return;
-    const { id, userId, amount } = requestToApprove;
+  const handleConfirmApprove = async (reqToApprove?: DepositRequest) => {
+    const request = reqToApprove || requestToApprove;
+    if (!request) return;
+    const { id, userId, amount } = request;
+    
     setActionLoading(prev => ({ ...prev, [id]: true }));
      try {
         await runTransaction(db, async (transaction) => {
+            const settingsRef = doc(db, 'settings', 'global');
+            const settingsDoc = await transaction.get(settingsRef);
+            const depositFeeRate = settingsDoc.exists() ? (settingsDoc.data().depositFeeRate || 0) : 0;
+
+            const feeAmount = (amount * depositFeeRate) / 100;
+            const netAmount = amount - feeAmount;
+
             const depositRef = doc(db, 'depositRequests', id);
             const userRef = doc(db, 'users', userId);
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("User not found");
-            const newBalance = (userDoc.data().balance || 0) + amount;
+            
+            const newBalance = (userDoc.data().balance || 0) + netAmount;
             transaction.update(userRef, { balance: newBalance });
             transaction.update(depositRef, { status: 'approved' });
+
+            if (feeAmount > 0) {
+              const revenueRef = collection(db, 'revenueTransactions');
+              transaction.set(doc(revenueRef), {
+                  adminFeeAmount: feeAmount,
+                  originalAmount: amount,
+                  sourceUser: userId,
+                  timestamp: Timestamp.now(),
+                  transactionType: 'deposit_fee',
+                  relatedDocId: id,
+              });
+            }
         });
         addToast('Deposit approved successfully!', 'success');
     } catch (error) {
-        addToast('Failed to approve deposit.', 'error');
+        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Failed to approve deposit: ${message}`, 'error');
+        console.error(error);
     } finally {
         setActionLoading(prev => ({ ...prev, [id]: false }));
         setIsApproveConfirmOpen(false);
@@ -139,9 +163,10 @@ const DepositsPage: React.FC = () => {
     setIsRejectConfirmOpen(true);
   };
 
-  const handleReject = async () => {
-    if (!requestToReject) return;
-    const id = requestToReject;
+  const handleReject = async (reqId?: string) => {
+    const id = reqId || requestToReject;
+    if (!id) return;
+
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
         await updateDoc(doc(db, 'depositRequests', id), { status: 'rejected' });
@@ -159,28 +184,19 @@ const DepositsPage: React.FC = () => {
       setActionLoading({ ...actionLoading, bulk: true });
 
       try {
-          if (action === 'approve') {
-              for (const reqId of selectedRequests) {
+          const promises: Promise<void>[] = [];
+          for (const reqId of selectedRequests) {
+              if (action === 'approve') {
                   const request = deposits.find(d => d.id === reqId);
                   if (request) {
-                      await runTransaction(db, async (transaction) => {
-                        const depositRef = doc(db, 'depositRequests', request.id);
-                        const userRef = doc(db, 'users', request.userId);
-                        const userDoc = await transaction.get(userRef);
-                        if (!userDoc.exists()) throw new Error("User not found");
-                        const newBalance = (userDoc.data().balance || 0) + request.amount;
-                        transaction.update(userRef, { balance: newBalance });
-                        transaction.update(depositRef, { status: 'approved' });
-                      });
+                      promises.push(handleConfirmApprove(request));
                   }
+              } else { // Reject action
+                  promises.push(handleReject(reqId));
               }
-          } else { // Reject action
-              const batch = writeBatch(db);
-              selectedRequests.forEach(reqId => {
-                  batch.update(doc(db, 'depositRequests', reqId), { status: 'rejected' });
-              });
-              await batch.commit();
           }
+          await Promise.all(promises);
+          
           addToast(`Successfully ${action}d ${selectedRequests.size} requests.`, 'success');
           setSelectedRequests(new Set());
       } catch (error) {
@@ -291,8 +307,8 @@ const DepositsPage: React.FC = () => {
         </>
       )}
       
-      {requestToApprove && ( <ConfirmationModal isOpen={isApproveConfirmOpen} onClose={() => setIsApproveConfirmOpen(false)} onConfirm={handleConfirmApprove} title="Approve Deposit" message={`Approve deposit of Rs ${requestToApprove.amount.toFixed(2)} for ${requestToApprove.userEmail}?`} confirmButtonText="Approve" confirmButtonColor="bg-green-600 hover:bg-green-700" />)}
-      <ConfirmationModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={handleReject} title="Reject Deposit" message="Are you sure you want to reject this deposit?" />
+      {requestToApprove && ( <ConfirmationModal isOpen={isApproveConfirmOpen} onClose={() => setIsApproveConfirmOpen(false)} onConfirm={() => handleConfirmApprove()} title="Approve Deposit" message={`Approve deposit of Rs ${requestToApprove.amount.toFixed(2)} for ${requestToApprove.userEmail}?`} confirmButtonText="Approve" confirmButtonColor="bg-green-600 hover:bg-green-700" />)}
+      <ConfirmationModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={() => handleReject()} title="Reject Deposit" message="Are you sure you want to reject this deposit?" />
     </div>
   );
 };

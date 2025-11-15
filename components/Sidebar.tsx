@@ -12,6 +12,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { GenericXIcon } from './icons/GenericXIcon';
 import { SettingsIcon } from './icons/SettingsIcon';
+import { RevenueIcon } from './icons/RevenueIcon';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -64,6 +65,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           >
             <HomeIcon className="w-5 h-5 mr-3" />
             Dashboard
+          </NavLink>
+          <NavLink 
+            to="/revenue"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
+          >
+            <RevenueIcon className="w-5 h-5 mr-3" />
+            Revenue
           </NavLink>
           <NavLink 
             to="/users"

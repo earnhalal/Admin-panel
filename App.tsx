@@ -14,6 +14,7 @@ import FraudDetectionPage from './pages/FraudDetectionPage';
 import DepositsPage from './pages/DepositsPage';
 import SettingsPage from './pages/SettingsPage';
 import UserProfilePage from './pages/UserProfilePage';
+import RevenuePage from './pages/RevenuePage';
 
 const App: React.FC = () => {
   return (
@@ -35,6 +36,7 @@ const App: React.FC = () => {
               <Route path="ai-automations" element={<AiAutomationsPage />} />
               <Route path="fraud-detection" element={<FraudDetectionPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="revenue" element={<RevenuePage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
