@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { generateTaskWithAi } from '../services/aiService';
 import { useToast } from '../contexts/ToastContext';
-import { Task } from '../pages/TasksPage';
+import { Task, TaskType } from '../pages/TasksPage';
 import Spinner from './Spinner';
 import { SparklesIcon } from './icons/SparklesIcon';
 
@@ -43,7 +43,7 @@ const AiTaskModal: React.FC<AiTaskModalProps> = ({ onClose, onSave }) => {
     }
   };
 
-  const handleGeneratedTaskChange = (field: keyof GeneratedTask, value: string | number) => {
+  const handleGeneratedTaskChange = (field: keyof GeneratedTask, value: string | number | TaskType | undefined) => {
     if (generatedTask) {
       setGeneratedTask({ ...generatedTask, [field]: value });
     }

@@ -1,4 +1,5 @@
 import { User } from '../pages/UsersPage';
+import { TaskType } from '../pages/TasksPage';
 
 // Using any because the type is from a dynamic import.
 // The AI client will be initialized on first use, not on module load.
@@ -143,14 +144,18 @@ export const decideWithdrawalRequest = async (user: User, request: { amount: num
 };
 
 
-export const generateTaskWithAi = async (prompt: string): Promise<{ title: string; description: string; reward: number; }> => {
+export const generateTaskWithAi = async (prompt: string): Promise<{ title: string; description: string; reward: number; taskType?: TaskType; taskUrl?: string; }> => {
     try {
         const aiClient = await getAiClient();
         const { Type } = genaiTypes;
 
         const response = await aiClient.models.generateContent({
             model: model,
-            contents: `You are an expert task creator for a micro-task platform in Pakistan. Based on the user's request, create a concise, clear, and engaging task. Provide a title, a detailed step-by-step description, and a fair reward in Pakistani Rupees (Rs).
+            contents: `You are an expert task creator for a micro-task platform in Pakistan. Based on the user's request, create a concise, clear, and engaging task. 
+            
+            1.  Provide a title, a detailed step-by-step description, and a fair reward in Pakistani Rupees (Rs).
+            2.  Analyze the prompt to determine the platform. If it's YouTube, Instagram, Facebook, a general website, or something else, set 'taskType' to one of: 'youtube', 'instagram', 'facebook', 'website', 'other'. If no platform is mentioned, omit 'taskType'.
+            3.  If a 'taskType' is identified, provide a generic placeholder 'taskUrl' for that platform (e.g., 'https://www.youtube.com/'). Otherwise, omit 'taskUrl'.
             
             User Request: "${prompt}"
             
@@ -162,7 +167,9 @@ export const generateTaskWithAi = async (prompt: string): Promise<{ title: strin
                     properties: {
                         title: { type: Type.STRING, description: "A short, catchy title for the task." },
                         description: { type: Type.STRING, description: "A detailed, step-by-step guide for the user to complete the task." },
-                        reward: { type: Type.NUMBER, description: "A fair and reasonable reward amount in Pakistani Rupees (Rs)." }
+                        reward: { type: Type.NUMBER, description: "A fair and reasonable reward amount in Pakistani Rupees (Rs)." },
+                        taskType: { type: Type.STRING, description: "The type of task, e.g., 'youtube', 'instagram'. Optional." },
+                        taskUrl: { type: Type.STRING, description: "A placeholder URL for the task. Optional." }
                     },
                     required: ["title", "description", "reward"]
                 }

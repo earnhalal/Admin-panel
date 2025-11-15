@@ -12,7 +12,14 @@ import { XIcon } from '../components/icons/XIcon';
 import { SparklesIcon } from '../components/icons/SparklesIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
+import { YouTubeIcon } from '../components/icons/YouTubeIcon';
+import { InstagramIcon } from '../components/icons/InstagramIcon';
+import { FacebookIcon } from '../components/icons/FacebookIcon';
+import { GlobeIcon } from '../components/icons/GlobeIcon';
+import { LinkIcon } from '../components/icons/LinkIcon';
 
+
+export type TaskType = 'youtube' | 'instagram' | 'facebook' | 'website' | 'other';
 
 export interface Task {
   id: string;
@@ -22,6 +29,8 @@ export interface Task {
   status: 'active' | 'inactive' | 'pending_approval';
   createdBy?: string;
   userEmail?: string;
+  taskType?: TaskType;
+  taskUrl?: string;
 }
 
 export interface UserTask {
@@ -33,6 +42,14 @@ export interface UserTask {
     taskTitle?: string;
     taskReward?: number;
 }
+
+const TASK_TYPE_ICONS: { [key in TaskType]: React.ReactNode } = {
+    youtube: <YouTubeIcon className="w-5 h-5 text-red-600" />,
+    instagram: <InstagramIcon className="w-5 h-5 text-pink-500" />,
+    facebook: <FacebookIcon className="w-5 h-5 text-blue-600" />,
+    website: <GlobeIcon className="w-5 h-5 text-gray-500" />,
+    other: <LinkIcon className="w-5 h-5 text-gray-500" />,
+};
 
 const TasksPage: React.FC = () => {
   const [managedTasks, setManagedTasks] = useState<Task[]>([]);
@@ -136,18 +153,58 @@ const TasksPage: React.FC = () => {
     setIsAiModalOpen(false);
     setSelectedTask(null);
   };
-  const handleSaveTask = async (task: Omit<Task, 'id'>) => {
-    // ... (existing implementation)
+  const handleSaveTask = async (taskData: Omit<Task, 'id'>) => {
+    const action = selectedTask ? 'update' : 'create';
+    setActionLoading(prev => ({...prev, [action]: true}));
+    try {
+        if (selectedTask) {
+            const taskRef = doc(db, 'tasks', selectedTask.id);
+            await updateDoc(taskRef, taskData);
+            addToast("Task updated successfully!", "success");
+        } else {
+            await addDoc(collection(db, 'tasks'), {
+                ...taskData,
+                status: taskData.status || 'active', // Default status for new tasks
+            });
+            addToast("Task created successfully!", "success");
+        }
+        handleCloseModal();
+    } catch (error) {
+        addToast(`Failed to ${action} task.`, "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [action]: false}));
+    }
   };
   const openDeleteConfirm = (id: string) => {
     setTaskToDelete(id);
     setIsDeleteConfirmOpen(true);
   };
   const handleDeleteTask = async () => {
-    // ... (existing implementation)
+    if (!taskToDelete) return;
+    setActionLoading(prev => ({...prev, [taskToDelete]: true}));
+    try {
+        await deleteDoc(doc(db, 'tasks', taskToDelete));
+        addToast("Task deleted successfully.", "success");
+    } catch (error) {
+        addToast("Failed to delete task.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [taskToDelete]: false}));
+        setIsDeleteConfirmOpen(false);
+        setTaskToDelete(null);
+    }
   };
   const handleToggleStatus = async (task: Task) => {
-    // ... (existing implementation)
+    setActionLoading(prev => ({...prev, [`toggle_${task.id}`]: true}));
+    try {
+        const taskRef = doc(db, 'tasks', task.id);
+        const newStatus = task.status === 'active' ? 'inactive' : 'active';
+        await updateDoc(taskRef, { status: newStatus });
+        addToast(`Task status changed to ${newStatus}.`, "success");
+    } catch (error) {
+        addToast("Failed to change task status.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [`toggle_${task.id}`]: false}));
+    }
   };
   
   const handleApproveRequest = async (task: Task) => {
@@ -197,7 +254,18 @@ const TasksPage: React.FC = () => {
     setIsRejectConfirmOpen(true);
   };
   const handleRejectRequest = async () => {
-    // ... (existing implementation)
+    if (!requestToReject) return;
+    setActionLoading(prev => ({...prev, [requestToReject]: true}));
+    try {
+        await deleteDoc(doc(db, 'tasks', requestToReject));
+        addToast("Task request rejected and deleted.", "success");
+    } catch (error) {
+        addToast("Failed to reject request.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [requestToReject]: false}));
+        setIsRejectConfirmOpen(false);
+        setRequestToReject(null);
+    }
   };
   
   const handleApproveSubmission = async (submission: UserTask) => {
@@ -242,7 +310,16 @@ const TasksPage: React.FC = () => {
     }
   };
   const handleRejectSubmission = async (submissionId: string) => {
-    // ... (existing implementation)
+    setActionLoading(prev => ({...prev, [submissionId]: true}));
+    try {
+        const submissionRef = doc(db, 'userTasks', submissionId);
+        await updateDoc(submissionRef, { status: 'rejected' });
+        addToast("Submission rejected.", "success");
+    } catch (error) {
+        addToast("Failed to reject submission.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [submissionId]: false}));
+    }
   };
   
   const handleSelectSubmission = (subId: string) => {
@@ -345,6 +422,17 @@ const TasksPage: React.FC = () => {
                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${task.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'}`}>{task.status}</span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
+                         {task.taskUrl && (
+                            <a 
+                                href={task.taskUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                                {task.taskType && TASK_TYPE_ICONS[task.taskType]}
+                                View Task Link
+                            </a>
+                        )}
                     </div>
                     <div className="mt-4 flex justify-between items-center">
                         <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
