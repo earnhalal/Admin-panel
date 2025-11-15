@@ -1,3 +1,4 @@
+// FIX: Import useState and useEffect from React to resolve multiple "Cannot find name" errors.
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -5,6 +6,10 @@ import { UsersIcon } from '../components/icons/UsersIcon';
 import { WithdrawalIcon } from '../components/icons/WithdrawalIcon';
 import { TasksIcon } from '../components/icons/TasksIcon';
 import { WalletIcon } from '../components/icons/WalletIcon';
+import { SparklesIcon } from '../components/icons/SparklesIcon';
+import { generateSmartReport } from '../services/aiService';
+import { useToast } from '../contexts/ToastContext';
+import Spinner from '../components/Spinner';
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean }> = ({ title, value, icon, loading }) => (
   <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg flex items-center justify-between">
@@ -35,6 +40,10 @@ const DashboardPage: React.FC = () => {
   const [loadingSubmissions, setLoadingSubmissions] = useState(true);
   const [loadingBalance, setLoadingBalance] = useState(true);
   const [loadingWithdrawn, setLoadingWithdrawn] = useState(true);
+
+  const [aiReport, setAiReport] = useState<string | null>(null);
+  const [isReportLoading, setIsReportLoading] = useState(false);
+  const { addToast } = useToast();
 
   useEffect(() => {
     // Listener for total users
@@ -90,6 +99,29 @@ const DashboardPage: React.FC = () => {
     };
   }, []);
 
+  const handleGenerateReport = async () => {
+    setIsReportLoading(true);
+    setAiReport(null);
+    try {
+        const stats = {
+            userCount,
+            totalBalance,
+            totalWithdrawn,
+            pendingWithdrawals,
+            pendingSubmissions
+        };
+        const report = await generateSmartReport(stats);
+        setAiReport(report);
+        addToast("AI Smart Report generated successfully!", "success");
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(message, 'error');
+    } finally {
+        setIsReportLoading(false);
+    }
+  };
+
+
   return (
     <div className="container mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
@@ -103,10 +135,32 @@ const DashboardPage: React.FC = () => {
         <StatCard title="Pending Task Submissions" value={pendingSubmissions} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions} />
       </div>
        <div className="mt-8 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4">Overview</h2>
-        <p className="text-gray-600 dark:text-gray-300">
-          This is the central hub for managing your application. The statistics above are updated in real-time. You can navigate through different sections using the sidebar to manage users, tasks, withdrawal requests, and referrals.
-        </p>
+        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4 flex items-center gap-2">
+            <SparklesIcon className="w-6 h-6 text-purple-500" />
+            AI Smart Report
+        </h2>
+        
+        {isReportLoading ? (
+            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                <Spinner /> Generating your report...
+            </div>
+        ) : aiReport ? (
+             <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{aiReport}</div>
+        ) : (
+            <>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">
+                Click the button to get an AI-powered summary of your app's current performance and actionable insights.
+                </p>
+                <button 
+                    onClick={handleGenerateReport}
+                    disabled={isReportLoading}
+                    className="inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 disabled:bg-purple-400"
+                >
+                    <SparklesIcon className="w-5 h-5" />
+                    Generate Report
+                </button>
+            </>
+        )}
       </div>
     </div>
   );

@@ -5,6 +5,9 @@ import { UsersIcon } from './icons/UsersIcon';
 import { TasksIcon } from './icons/TasksIcon';
 import { WithdrawalIcon } from './icons/WithdrawalIcon';
 import { ReferralIcon } from './icons/ReferralIcon';
+import { AiIcon } from './icons/AiIcon';
+import { ShieldIcon } from './icons/ShieldIcon';
+import { DepositIcon } from './icons/DepositIcon';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { GenericXIcon } from './icons/GenericXIcon';
@@ -86,12 +89,36 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             Withdrawals
           </NavLink>
           <NavLink 
+            to="/deposits"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
+          >
+            <DepositIcon className="w-5 h-5 mr-3" />
+            Deposits
+          </NavLink>
+          <NavLink 
             to="/referrals"
             onClick={handleLinkClick}
             className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
           >
             <ReferralIcon className="w-5 h-5 mr-3" />
             Referrals
+          </NavLink>
+           <NavLink 
+            to="/ai-automations"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
+          >
+            <AiIcon className="w-5 h-5 mr-3" />
+            AI Automations
+          </NavLink>
+          <NavLink 
+            to="/fraud-detection"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
+          >
+            <ShieldIcon className="w-5 h-5 mr-3" />
+            Fraud Detection
           </NavLink>
         </nav>
         <div className="mt-auto px-4 py-3">

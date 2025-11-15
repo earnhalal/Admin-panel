@@ -9,6 +9,9 @@ import WithdrawalsPage from './pages/WithdrawalsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import ReferralsPage from './pages/ReferralsPage';
 import ToastContainer from './components/ToastContainer';
+import AiAutomationsPage from './pages/AiAutomationsPage';
+import FraudDetectionPage from './pages/FraudDetectionPage';
+import DepositsPage from './pages/DepositsPage';
 
 const App: React.FC = () => {
   return (
@@ -24,7 +27,10 @@ const App: React.FC = () => {
               <Route path="users" element={<UsersPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
+              <Route path="deposits" element={<DepositsPage />} />
               <Route path="referrals" element={<ReferralsPage />} />
+              <Route path="ai-automations" element={<AiAutomationsPage />} />
+              <Route path="fraud-detection" element={<FraudDetectionPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
