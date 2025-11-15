@@ -12,6 +12,7 @@ import ToastContainer from './components/ToastContainer';
 import AiAutomationsPage from './pages/AiAutomationsPage';
 import FraudDetectionPage from './pages/FraudDetectionPage';
 import DepositsPage from './pages/DepositsPage';
+import SettingsPage from './pages/SettingsPage';
 
 const App: React.FC = () => {
   return (
@@ -31,6 +32,7 @@ const App: React.FC = () => {
               <Route path="referrals" element={<ReferralsPage />} />
               <Route path="ai-automations" element={<AiAutomationsPage />} />
               <Route path="fraud-detection" element={<FraudDetectionPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />

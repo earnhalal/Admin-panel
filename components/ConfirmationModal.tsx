@@ -6,9 +6,19 @@ interface ConfirmationModalProps {
   onConfirm: () => void;
   title: string;
   message: string;
+  confirmButtonText?: string;
+  confirmButtonColor?: string;
 }
 
-const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm, title, message }) => {
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmButtonText = 'Confirm',
+  confirmButtonColor = 'bg-red-600 hover:bg-red-700',
+}) => {
   if (!isOpen) return null;
 
   return (
@@ -25,9 +35,9 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
           </button>
           <button
             onClick={onConfirm}
-            className="w-full sm:w-auto px-4 py-2 rounded-lg text-white bg-red-600 hover:bg-red-700 font-semibold transition-colors"
+            className={`w-full sm:w-auto px-4 py-2 rounded-lg text-white font-semibold transition-colors ${confirmButtonColor}`}
           >
-            Confirm
+            {confirmButtonText}
           </button>
         </div>
       </div>

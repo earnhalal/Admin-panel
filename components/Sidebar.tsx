@@ -11,6 +11,7 @@ import { DepositIcon } from './icons/DepositIcon';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { GenericXIcon } from './icons/GenericXIcon';
+import { SettingsIcon } from './icons/SettingsIcon';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -18,7 +19,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const commonLinkClass = "flex items-center px-4 py-3 text-gray-300 hover:bg-slate-700 hover:text-white rounded-lg transition-colors duration-200";
+  const commonLinkClass = "flex items-center px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-lg transition-colors duration-200";
   const activeLinkClass = "bg-indigo-600 text-white";
   const navigate = useNavigate();
 
@@ -44,7 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         onClick={onClose}
         aria-hidden="true"
       ></div>
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col p-4 z-40 transform transition-transform duration-300 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 h-full w-64 bg-gray-900 text-white flex-shrink-0 flex flex-col p-4 z-40 transform transition-transform duration-300 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex justify-between items-center mb-10 px-4">
           <div className="text-2xl font-bold">
             <span className="bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
@@ -119,6 +120,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           >
             <ShieldIcon className="w-5 h-5 mr-3" />
             Fraud Detection
+          </NavLink>
+          <NavLink 
+            to="/settings"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
+          >
+            <SettingsIcon className="w-5 h-5 mr-3" />
+            Settings
           </NavLink>
         </nav>
         <div className="mt-auto px-4 py-3">
