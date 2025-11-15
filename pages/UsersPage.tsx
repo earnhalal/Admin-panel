@@ -22,6 +22,7 @@ export interface User {
   submittedTransactionId?: string | null;
   createdAt?: Timestamp;
   lastLoginAt?: Timestamp;
+  withdrawalPoints?: number;
 }
 
 type PaymentStatusFilter = 'all' | 'pending' | 'verified' | 'rejected';
@@ -82,15 +83,53 @@ const UsersPage: React.FC = () => {
   };
 
   const handleSaveUser = async (updatedUser: User) => {
-    // ... (existing implementation)
+    setActionLoading(prev => ({...prev, [`save_${updatedUser.id}`]: true}));
+    try {
+        const userRef = doc(db, 'users', updatedUser.id);
+        const { id, ...dataToSave } = updatedUser;
+        await updateDoc(userRef, dataToSave);
+        addToast("User updated successfully!", "success");
+        handleCloseModal();
+    } catch (error) {
+        addToast("Failed to update user.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [`save_${updatedUser.id}`]: false}));
+    }
   };
   
   const handleVerifyPayment = async (userId: string) => {
-    // ... (existing implementation)
+    setActionLoading(prev => ({...prev, [`verify_${userId}`]: true}));
+    try {
+        await runTransaction(db, async (transaction) => {
+            const userRef = doc(db, "users", userId);
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists()) throw "User not found";
+            
+            transaction.update(userRef, { isPaid: true, paymentStatus: 'verified' });
+        });
+        addToast("Payment verified!", "success");
+    } catch(error) {
+        addToast("Failed to verify payment.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [`verify_${userId}`]: false}));
+    }
   };
 
   const handleRejectPayment = async (userId: string) => {
-    // ... (existing implementation)
+    setActionLoading(prev => ({...prev, [`reject_${userId}`]: true}));
+    try {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, {
+            isPaid: false,
+            paymentStatus: 'rejected',
+            submittedTransactionId: null
+        });
+        addToast("Payment rejected.", "success");
+    } catch (error) {
+        addToast("Failed to reject payment.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [`reject_${userId}`]: false}));
+    }
   };
   
   const handleBulkAction = async (action: 'verify' | 'reject') => {

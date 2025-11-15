@@ -97,10 +97,16 @@ const UserProfilePage: React.FC = () => {
                     <h1 className="text-3xl font-bold text-gray-800 dark:text-white">{user.username || 'User Profile'}</h1>
                     <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
                 </div>
-                <div className="text-right">
-                    <p className="text-gray-500 dark:text-gray-400">Current Balance</p>
-                    <p className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {user.balance.toFixed(2)}</p>
-                </div>
+                 <div className="flex gap-4">
+                    <div className="text-right">
+                        <p className="text-gray-500 dark:text-gray-400">Withdrawal Points</p>
+                        <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{user.withdrawalPoints || 0}</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-gray-500 dark:text-gray-400">Current Balance</p>
+                        <p className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {user.balance.toFixed(2)}</p>
+                    </div>
+                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
