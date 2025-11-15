@@ -1,32 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
-import ConfirmationModal from '../components/ConfirmationModal';
 import Spinner from '../components/Spinner';
 import TransactionIdModal from '../components/TransactionIdModal';
 import { CheckIcon } from '../components/icons/CheckIcon';
 import { XIcon } from '../components/icons/XIcon';
-import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
 import RejectionModal from '../components/RejectionModal';
 
 // Interfaces...
-interface FirestoreWithdrawalRequestData {
-  userId: string;
-  amount: number;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
-  requestedAt: Timestamp;
-  method: string;
-  accountName: string;
-  accountNumber: string;
-  transactionId?: string;
-  bankName?: string;
-  rejectionReason?: string;
-}
-
 interface WithdrawalRequest {
   id: string;
   userId: string;
@@ -61,8 +46,7 @@ const WithdrawalsPage: React.FC = () => {
   const [filter, setFilter] = useState<'Pending' | 'Approved' | 'Rejected'>('Pending');
   const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
   const { addToast } = useToast();
-  const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-
+  
   // New state for advanced features
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'requestedAt', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -74,31 +58,27 @@ const WithdrawalsPage: React.FC = () => {
   
   const [isTxnModalOpen, setIsTxnModalOpen] = useState(false);
   const [approvalPayload, setApprovalPayload] = useState<ApprovalPayload | null>(null);
-  
-  const toggleExpand = (id: string) => {
-    setExpandedRequests(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(id)) newSet.delete(id);
-        else newSet.add(id);
-        return newSet;
-    });
-  };
 
   useEffect(() => {
-    // ... (existing useEffect)
     setLoading(true);
-    setExpandedRequests(new Set());
     setSelectedRequests(new Set());
     const q = query(collection(db, 'withdrawalRequests'), where('status', '==', filter));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-        // ... (existing data fetching logic)
-        const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), requestedAt: (doc.data().requestedAt as Timestamp).toDate() } as WithdrawalRequest));
+        const requests = snapshot.docs.map(doc => {
+          const data = doc.data();
+          const requestedAtDate = data.requestedAt ? (data.requestedAt as Timestamp).toDate() : new Date(0); // Fallback date
+          return { id: doc.id, ...data, requestedAt: requestedAtDate } as WithdrawalRequest
+        });
         const enrichedRequests = await Promise.all(requests.map(async req => {
             const userRef = doc(db, 'users', req.userId);
             const userSnap = await getDoc(userRef);
             return userSnap.exists() ? { ...req, userEmail: (userSnap.data() as User).email } : { ...req, userEmail: 'Unknown User' };
         }));
         setWithdrawals(enrichedRequests);
+        setLoading(false);
+    }, (error) => {
+        console.error("Error fetching withdrawals:", error);
+        addToast("Error fetching withdrawals.", 'error');
         setLoading(false);
     });
     return () => unsubscribe();
@@ -155,7 +135,25 @@ const WithdrawalsPage: React.FC = () => {
   };
   
   const handleConfirmApproval = async (enteredTransactionId: string) => {
-    // ... (existing implementation)
+    if (!approvalPayload) return;
+    const { id } = approvalPayload;
+
+    setActionLoading(prev => ({ ...prev, [id]: true }));
+    try {
+      const withdrawalRef = doc(db, 'withdrawalRequests', id);
+      await updateDoc(withdrawalRef, {
+        status: 'Approved',
+        transactionId: enteredTransactionId,
+      });
+      addToast('Withdrawal approved successfully!', 'success');
+    } catch (error) {
+      console.error('Approval failed:', error);
+      addToast('Failed to approve withdrawal.', 'error');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [id]: false }));
+      setIsTxnModalOpen(false);
+      setApprovalPayload(null);
+    }
   };
   
   const openRejectModal = (payload: RejectionPayload) => {
@@ -193,35 +191,27 @@ const WithdrawalsPage: React.FC = () => {
   const handleBulkReject = async () => {
       if (selectedRequests.size === 0) return;
       setActionLoading(prev => ({ ...prev, bulkReject: true }));
-      const batch = writeBatch(db);
       const userBalanceUpdates = new Map<string, number>();
 
-      for (const reqId of selectedRequests) {
-          const request = withdrawals.find(w => w.id === reqId);
-          if (!request) continue;
-          
-          const withdrawalRef = doc(db, 'withdrawalRequests', reqId);
-          batch.update(withdrawalRef, { status: 'Rejected', rejectionReason: 'Bulk rejected by admin.' });
-          
-          userBalanceUpdates.set(request.userId, (userBalanceUpdates.get(request.userId) || 0) + request.amount);
-      }
-      
       try {
-          // Firestore transactions are better for balance updates but harder in a loop.
-          // This approach is faster but less atomic for the balance part.
-          // For a production app, a Cloud Function would be ideal here.
-          for (const [userId, amountToRefund] of userBalanceUpdates.entries()) {
-              const userRef = doc(db, 'users', userId);
-              const userDoc = await getDoc(userRef);
-              if (userDoc.exists()) {
-                  const newBalance = (userDoc.data().balance || 0) + amountToRefund;
-                  batch.update(userRef, { balance: newBalance });
-              }
-          }
+        for (const reqId of selectedRequests) {
+            const request = withdrawals.find(w => w.id === reqId);
+            if (!request) continue;
+            
+            await runTransaction(db, async (transaction) => {
+                const withdrawalRef = doc(db, 'withdrawalRequests', reqId);
+                const userRef = doc(db, 'users', request.userId);
+                const userDoc = await transaction.get(userRef);
 
-          await batch.commit();
-          addToast(`${selectedRequests.size} requests rejected.`, 'success');
-          setSelectedRequests(new Set());
+                if (userDoc.exists()) {
+                    const newBalance = (userDoc.data().balance || 0) + request.amount;
+                    transaction.update(userRef, { balance: newBalance });
+                }
+                transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: 'Bulk rejected by admin.' });
+            });
+        }
+        addToast(`${selectedRequests.size} requests rejected.`, 'success');
+        setSelectedRequests(new Set());
       } catch (error) {
           addToast('Bulk rejection failed.', 'error');
       } finally {
@@ -232,8 +222,20 @@ const WithdrawalsPage: React.FC = () => {
   return (
     <div className="container mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Withdrawal Requests</h1>
-      <div className="mb-4">
-        {/* ... (existing filter buttons) ... */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(['Pending', 'Approved', 'Rejected'] as const).map(status => (
+          <button
+            key={status}
+            onClick={() => setFilter(status)}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+              filter === status
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700'
+            }`}
+          >
+            {status}
+          </button>
+        ))}
       </div>
 
       {filter === 'Pending' && selectedRequests.size > 0 && (
@@ -248,109 +250,88 @@ const WithdrawalsPage: React.FC = () => {
       {loading ? ( <div className="text-center mt-10">Loading...</div> ) : paginatedWithdrawals.length === 0 ? (
         <p className="text-center py-10 text-gray-500 dark:text-gray-400">No {filter} requests found.</p>
       ) : (
-        <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full leading-normal">
-              <thead>
-                <tr>
-                  {filter === 'Pending' && (
-                    <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                      <Checkbox
-                          checked={selectedRequests.size === paginatedWithdrawals.length && paginatedWithdrawals.length > 0}
-                          onChange={handleSelectAll}
-                          indeterminate={selectedRequests.size > 0 && selectedRequests.size < paginatedWithdrawals.length}
-                      />
-                    </th>
-                  )}
-                  <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
-                  <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                  <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
-                  {filter !== 'Pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Details</th>}
-                  {filter === 'Pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedWithdrawals.map((req) => (
-                   <React.Fragment key={req.id}>
-                    <tr className="bg-white dark:bg-slate-900">
+        <>
+            {/* Desktop Table */}
+            <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden hidden md:block">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full leading-normal">
+                    <thead>
+                        <tr>
                         {filter === 'Pending' && (
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                <Checkbox
-                                    checked={selectedRequests.has(req.id)}
-                                    onChange={() => handleSelectRequest(req.id)}
-                                />
-                            </td>
+                            <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
+                            <Checkbox
+                                checked={selectedRequests.size === paginatedWithdrawals.length && paginatedWithdrawals.length > 0}
+                                onChange={handleSelectAll}
+                                indeterminate={selectedRequests.size > 0 && selectedRequests.size < paginatedWithdrawals.length}
+                            />
+                            </th>
                         )}
-                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                           <div className="flex items-center">
-                                <button onClick={() => toggleExpand(req.id)} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mr-3 transition-colors">
-                                    <ChevronDownIcon className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${expandedRequests.has(req.id) ? 'rotate-180' : ''}`} />
-                                </button>
-                                <p className="text-gray-900 dark:text-white whitespace-no-wrap">{req.userEmail}</p>
-                           </div>
-                        </td>
-                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="text-gray-900 dark:text-white whitespace-no-wrap">Rs {req.amount.toFixed(2)}</p></td>
-                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                            <p className="text-gray-900 dark:text-white whitespace-no-wrap">{req.requestedAt.toLocaleString()}</p>
-                        </td>
-                        {filter !== 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                            <p className="text-gray-900 dark:text-white whitespace-no-wrap break-all">{req.transactionId || 'N/A'}</p>
-                            {req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}
-                        </td>}
-                        {filter === 'Pending' && (
-                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                            <div className="flex items-center gap-2">
-                            <button onClick={() => openApprovalModal(req.id, req.userId)} disabled={actionLoading[req.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400">
-                                {actionLoading[req.id] ? <Spinner /> : <CheckIcon className="w-4 h-4" />}
-                            </button>
-                            <button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400">
-                                {actionLoading[req.id] ? <Spinner /> : <XIcon className="w-4 h-4" />}
-                            </button>
-                            </div>
-                        </td>
-                        )}
-                    </tr>
-                    {expandedRequests.has(req.id) && (
-                        <tr className="bg-gray-50 dark:bg-slate-800/50">
-                            <td colSpan={filter === 'Pending' ? 5 : 4} className="p-0">
-                                <div className="px-10 py-4">
-                                    <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-200 mb-2">Account Details</h4>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                                        <div><span className="text-gray-500 dark:text-gray-400">Method:</span> <span className="font-medium text-gray-900 dark:text-white">{req.method}</span></div>
-                                        <div><span className="text-gray-500 dark:text-gray-400">Account Name:</span> <span className="font-medium text-gray-900 dark:text-white">{req.accountName}</span></div>
-                                        <div><span className="text-gray-500 dark:text-gray-400">Account Number:</span> <span className="font-medium text-gray-900 dark:text-white break-all">{req.accountNumber}</span></div>
-                                        {req.bankName && <div><span className="text-gray-500 dark:text-gray-400">Bank:</span> <span className="font-medium text-gray-900 dark:text-white">{req.bankName}</span></div>}
-                                    </div>
-                                </div>
-                            </td>
+                        <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User & Details</th>
+                        <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
+                        <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
+                        {filter !== 'Pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Details</th>}
+                        {filter === 'Pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
                         </tr>
-                    )}
-                  </React.Fragment>
+                    </thead>
+                    <tbody>
+                        {paginatedWithdrawals.map((req) => (
+                        <tr key={req.id}>
+                            {filter === 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
+                                <p className="font-semibold">{req.userEmail}</p>
+                                <p className="text-xs text-gray-500">{req.method}: {req.accountNumber}</p>
+                            </td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>Rs {req.amount.toFixed(2)}</p></td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>{req.requestedAt.toLocaleString()}</p></td>
+                            {filter !== 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="break-all">{req.transactionId || 'N/A'}</p>{req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}</td>}
+                            {filter === 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req.id, req.userId)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
+                        </tr>
+                        ))}
+                    </tbody>
+                    </table>
+                </div>
+                <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedWithdrawals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden space-y-4">
+                {paginatedWithdrawals.map(req => (
+                    <div key={req.id} className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                             <div>
+                                <p className="font-bold text-lg text-gray-900 dark:text-white">Rs {req.amount.toFixed(2)}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail}</p>
+                            </div>
+                            {filter === 'Pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
+                        </div>
+                        <div className="mt-4 text-sm space-y-1">
+                            <p><span className="font-semibold">Method:</span> {req.method}</p>
+                            <p><span className="font-semibold">Account:</span> {req.accountNumber}</p>
+                            <p><span className="font-semibold">Name:</span> {req.accountName}</p>
+                            {req.bankName && <p><span className="font-semibold">Bank:</span> {req.bankName}</p>}
+                            <p className="text-xs text-gray-400 pt-1">{req.requestedAt.toLocaleString()}</p>
+                        </div>
+                         {filter !== 'Pending' && (
+                            <div className="mt-2 text-sm">
+                                {req.transactionId && <p><span className="font-semibold">Txn ID:</span> <span className="break-all">{req.transactionId}</span></p>}
+                                {req.rejectionReason && <p><span className="font-semibold text-red-500">Reason:</span> {req.rejectionReason}</p>}
+                            </div>
+                         )}
+                        {filter === 'Pending' && (
+                            <div className="mt-4 flex justify-end gap-2">
+                                <button onClick={() => openApprovalModal(req.id, req.userId)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
+                                <button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
+                            </div>
+                        )}
+                    </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          <Pagination
-              currentPage={currentPage}
-              totalPages={Math.ceil(sortedWithdrawals.length / ITEMS_PER_PAGE)}
-              onPageChange={setCurrentPage}
-          />
-        </div>
+                 <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedWithdrawals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
+            </div>
+        </>
       )}
 
-      <RejectionModal
-        isOpen={isRejectModalOpen}
-        onClose={() => setIsRejectModalOpen(false)}
-        onConfirm={handleReject}
-        title="Reject Withdrawal"
-        isLoading={rejectionPayload ? actionLoading[rejectionPayload.id] : false}
-      />
-      <TransactionIdModal
-        isOpen={isTxnModalOpen}
-        onClose={() => setIsTxnModalOpen(false)}
-        onConfirm={handleConfirmApproval}
-        isLoading={approvalPayload ? actionLoading[approvalPayload.id] : false}
-      />
+      <RejectionModal isOpen={isRejectModalOpen} onClose={() => setIsRejectModalOpen(false)} onConfirm={handleReject} title="Reject Withdrawal" isLoading={rejectionPayload ? actionLoading[rejectionPayload.id] : false} />
+      <TransactionIdModal isOpen={isTxnModalOpen} onClose={() => setIsTxnModalOpen(false)} onConfirm={handleConfirmApproval} isLoading={approvalPayload ? actionLoading[approvalPayload.id] : false} />
     </div>
   );
 };

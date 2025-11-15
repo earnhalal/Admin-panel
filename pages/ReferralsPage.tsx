@@ -3,7 +3,6 @@ import { collection, query, where, onSnapshot, doc, getDoc, runTransaction, Time
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
-import Spinner from '../components/Spinner';
 import { CheckIcon } from '../components/icons/CheckIcon';
 import { XIcon } from '../components/icons/XIcon';
 import Pagination from '../components/Pagination';
@@ -150,50 +149,63 @@ const ReferralsPage: React.FC = () => {
             {referrals.length === 0 ? (
                  <p className="text-center py-10 text-gray-500 dark:text-gray-400">No pending referral bonuses.</p>
             ) : (
-            <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full leading-normal">
-                        <thead>
-                            <tr>
-                                <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                                    <Checkbox
-                                        checked={selectedReferrals.size === paginatedReferrals.length && paginatedReferrals.length > 0}
-                                        onChange={handleSelectAll}
-                                        indeterminate={selectedReferrals.size > 0 && selectedReferrals.size < paginatedReferrals.length}
-                                    />
-                                </th>
-                                <th onClick={() => requestSort('referrerEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Referrer</th>
-                                <th onClick={() => requestSort('referredEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Referred User</th>
-                                <th onClick={() => requestSort('bonusAmount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Bonus</th>
-                                <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {paginatedReferrals.map((ref) => (
-                                <tr key={ref.id}>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                        <Checkbox checked={selectedReferrals.has(ref.id)} onChange={() => handleSelectReferral(ref.id)} />
-                                    </td>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{ref.referrerEmail}</td>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{ref.referredEmail}</td>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {ref.bonusAmount.toFixed(2)}</td>
-                                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="p-1.5 bg-green-600 text-white rounded-md hover:bg-green-700"><CheckIcon className="w-4 h-4"/></button>
-                                            <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="p-1.5 bg-red-600 text-white rounded-md hover:bg-red-700"><XIcon className="w-4 h-4"/></button>
-                                        </div>
-                                    </td>
+            <>
+                {/* Desktop Table */}
+                <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden hidden md:block">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full leading-normal">
+                            <thead>
+                                <tr>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
+                                        <Checkbox
+                                            checked={selectedReferrals.size === paginatedReferrals.length && paginatedReferrals.length > 0}
+                                            onChange={handleSelectAll}
+                                            indeterminate={selectedReferrals.size > 0 && selectedReferrals.size < paginatedReferrals.length}
+                                        />
+                                    </th>
+                                    <th onClick={() => requestSort('referrerEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Referrer</th>
+                                    <th onClick={() => requestSort('referredEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Referred User</th>
+                                    <th onClick={() => requestSort('bonusAmount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Bonus</th>
+                                    <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {paginatedReferrals.map((ref) => (
+                                    <tr key={ref.id}>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedReferrals.has(ref.id)} onChange={() => handleSelectReferral(ref.id)} /></td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{ref.referrerEmail}</td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{ref.referredEmail}</td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {ref.bonusAmount.toFixed(2)}</td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedReferrals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage} />
                 </div>
-                <Pagination
-                    currentPage={currentPage}
-                    totalPages={Math.ceil(sortedReferrals.length / ITEMS_PER_PAGE)}
-                    onPageChange={setCurrentPage}
-                />
-            </div>
+
+                {/* Mobile Cards */}
+                 <div className="md:hidden space-y-4">
+                    {paginatedReferrals.map(ref => (
+                        <div key={ref.id} className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-4">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="font-bold text-lg text-indigo-600 dark:text-indigo-400">Rs {ref.bonusAmount.toFixed(2)}</p>
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">From: {ref.referrerEmail}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">To: {ref.referredEmail}</p>
+                                </div>
+                                <Checkbox checked={selectedReferrals.has(ref.id)} onChange={() => handleSelectReferral(ref.id)} />
+                            </div>
+                            <div className="mt-4 flex justify-end gap-2">
+                                <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
+                                <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
+                            </div>
+                        </div>
+                    ))}
+                    <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedReferrals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage} />
+                 </div>
+            </>
             )}
         </div>
     );

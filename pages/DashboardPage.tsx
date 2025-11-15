@@ -11,6 +11,7 @@ import { generateSmartReport } from '../services/aiService';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import BarChart from '../components/BarChart';
+import RecentActivityFeed from '../components/RecentActivityFeed';
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean }> = ({ title, value, icon, loading }) => (
   <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg flex items-center justify-between">
@@ -151,6 +152,7 @@ const DashboardPage: React.FC = () => {
         <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} loading={loadingWithdrawals} />
         <StatCard title="Pending Task Submissions" value={pendingSubmissions} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions} />
       </div>
+
        <div className="mt-8 grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4">
@@ -161,6 +163,11 @@ const DashboardPage: React.FC = () => {
            </div>
         </div>
         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
+           <RecentActivityFeed />
+        </div>
+       </div>
+
+       <div className="mt-8 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
           <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4 flex items-center gap-2">
               <SparklesIcon className="w-6 h-6 text-purple-500" />
               AI Smart Report
@@ -188,7 +195,6 @@ const DashboardPage: React.FC = () => {
               </>
           )}
         </div>
-       </div>
     </div>
   );
 };

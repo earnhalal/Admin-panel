@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 interface AppSettings {
   aiAutoPilotReferrals: boolean;
   aiAutoPilotTasks: boolean;
+  aiAutoPilotWithdrawals: boolean;
 }
 
 const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }> = ({ enabled, onChange, disabled }) => (
@@ -25,6 +26,7 @@ const SettingsPage: React.FC = () => {
     const [settings, setSettings] = useState<AppSettings>({
         aiAutoPilotReferrals: false,
         aiAutoPilotTasks: false,
+        aiAutoPilotWithdrawals: false,
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -68,6 +70,18 @@ const SettingsPage: React.FC = () => {
 
                 {loading ? <p>Loading settings...</p> : (
                     <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="font-medium text-gray-900 dark:text-gray-100">Auto-Process Withdrawals</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">When enabled, AI will automatically reject suspicious withdrawals in the background.</p>
+                            </div>
+                            <Toggle
+                                enabled={settings.aiAutoPilotWithdrawals}
+                                onChange={(value) => handleSettingChange('aiAutoPilotWithdrawals', value)}
+                                disabled={saving}
+                            />
+                        </div>
+
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="font-medium text-gray-900 dark:text-gray-100">Auto-Process Referral Bonuses</h3>

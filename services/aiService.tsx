@@ -7,10 +7,9 @@ let genaiTypes: any;
 
 const getAiClient = async () => {
   if (!ai) {
-    // Dynamically import the module only when it's needed for the first time.
-    // This prevents browser-related issues on initial app load if the library
-    // has dependencies on a Node.js environment.
-    const genaiModule = await import('@google/genai');
+    // Dynamically import the module using its full CDN URL to ensure the build tool
+    // treats it as an external resource and doesn't try to resolve it locally.
+    const genaiModule = await import('https://aistudiocdn.com/google-genai@0.17.0');
     const { GoogleGenAI } = genaiModule;
     genaiTypes = genaiModule;
     
@@ -93,6 +92,56 @@ export const decideTaskApproval = async (submission: { userEmail?: string, taskT
       return 'APPROVE';
     }
   };
+
+export const decideWithdrawalRequest = async (user: User, request: { amount: number }): Promise<{ decision: 'APPROVE' | 'REJECT', reason: string }> => {
+    try {
+        const joinDate = user.createdAt?.toDate();
+        const daysSinceJoin = joinDate ? Math.floor((new Date().getTime() - joinDate.getTime()) / (1000 * 3600 * 24)) : 'N/A';
+
+        const prompt = `You are a fraud detection AI. Analyze this withdrawal request. Your policy is to be cautious. REJECT if it seems suspicious. A request is suspicious if a brand new user (joined recently) with a low balance tries to withdraw a large amount, especially if it's their first withdrawal. Otherwise, let it be manually approved by an admin.
+
+        User Data:
+        - Email: ${user.email}
+        - Current Balance: Rs ${user.balance.toFixed(2)}
+        - Joined: ${daysSinceJoin} days ago
+        
+        Withdrawal Request:
+        - Amount: Rs ${request.amount.toFixed(2)}
+        
+        Decision: Should this be REJECTED automatically due to high suspicion, or should it be left for manual APPROVE? Respond in JSON format with a 'decision' ('REJECT' or 'APPROVE') and a brief 'reason'.`;
+
+        const aiClient = await getAiClient();
+        const { Type } = genaiTypes;
+        const response = await aiClient.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        decision: { type: Type.STRING },
+                        reason: { type: Type.STRING }
+                    },
+                    required: ["decision", "reason"]
+                }
+            }
+        });
+
+        const jsonText = response.text.trim();
+        const parsed = JSON.parse(jsonText);
+        
+        if (parsed.decision === 'REJECT') {
+            return { decision: 'REJECT', reason: parsed.reason };
+        }
+        return { decision: 'APPROVE', reason: 'Seems legitimate. Ready for manual approval.' };
+
+    } catch (error) {
+        console.error("Error calling Gemini API for withdrawal decision:", error);
+        return { decision: 'APPROVE', reason: 'AI error, defaulting to manual approval.' };
+    }
+};
+
 
 export const generateTaskWithAi = async (prompt: string): Promise<{ title: string; description: string; reward: number; }> => {
     try {

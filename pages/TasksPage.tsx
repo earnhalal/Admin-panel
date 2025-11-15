@@ -216,7 +216,6 @@ const TasksPage: React.FC = () => {
 
   return (
     <div className="container mx-auto">
-      {/* Header and Modals (existing code) */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Manage Tasks</h1>
         <div className="flex flex-col sm:flex-row gap-2">
@@ -236,10 +235,53 @@ const TasksPage: React.FC = () => {
         </div>
       </div>
       
-      {/* User Task Requests section (existing code) */}
+      {/* User Task Requests section */}
+      {taskRequests.length > 0 && (
+        <div className="mb-12">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">User Task Requests</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {taskRequests.map(task => (
+                    <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md">
+                        <h3 className="font-bold truncate">{task.title}</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">By: {task.userEmail}</p>
+                        <p className="text-sm my-2 line-clamp-2">{task.description}</p>
+                        <div className="flex justify-between items-center mt-4">
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleApproveRequest(task.id)} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
+                                <button onClick={() => openRejectConfirm(task.id)} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
       
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-white mt-12 mb-4">Manage Live Tasks</h2>
-      {/* Managed Tasks table/cards (existing code) */}
+      <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Manage Live Tasks</h2>
+      {loading ? <p>Loading tasks...</p> : managedTasks.length === 0 ? <p className="text-gray-500 dark:text-gray-400">No active or inactive tasks found.</p> :
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {managedTasks.map(task => (
+                <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md flex flex-col">
+                    <div className="flex-grow">
+                        <div className="flex justify-between items-start">
+                             <h3 className="font-bold text-lg mb-1">{task.title}</h3>
+                             <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${task.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'}`}>{task.status}</span>
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
+                    </div>
+                    <div className="mt-4 flex justify-between items-center">
+                        <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
+                        <div className="flex gap-2">
+                            <button onClick={() => handleToggleStatus(task)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">{task.status === 'active' ? 'Pause' : 'Activate'}</button>
+                            <button onClick={() => handleOpenModal(task)} className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:underline">Edit</button>
+                            <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+      }
 
       <div className="mt-12">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Pending Task Submissions</h2>
@@ -259,7 +301,8 @@ const TasksPage: React.FC = () => {
             ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No pending submissions.</p>
             : <>
                 <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table View */}
+                    <div className="overflow-x-auto hidden md:block">
                         <table className="min-w-full leading-normal">
                             <thead>
                                 <tr>
@@ -306,6 +349,31 @@ const TasksPage: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden">
+                        {paginatedSubmissions.map(sub => (
+                             <div key={sub.id} className="p-4 border-b border-gray-200 dark:border-slate-800 flex items-start gap-4">
+                                <Checkbox
+                                    checked={selectedSubmissions.has(sub.id)}
+                                    onChange={() => handleSelectSubmission(sub.id)}
+                                    className="mt-1"
+                                />
+                                <div className="flex-1">
+                                    <p className="font-semibold text-gray-900 dark:text-white">{sub.taskTitle}</p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">from {sub.userEmail}</p>
+                                    <div className="mt-2 flex justify-between items-center">
+                                        <p className="font-bold text-indigo-600 dark:text-indigo-400">Rs {sub.taskReward?.toFixed(2)}</p>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
+                                            <button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
                     <Pagination 
                         currentPage={currentSubmissionsPage}
                         totalPages={Math.ceil(submissions.length / ITEMS_PER_PAGE)}

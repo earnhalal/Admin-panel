@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, runTransaction, Timestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import UserEditModal from '../components/UserEditModal';
@@ -8,6 +8,7 @@ import { CheckIcon } from '../components/icons/CheckIcon';
 import { XIcon } from '../components/icons/XIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
+import { Link } from 'react-router-dom';
 
 // Existing interfaces...
 export interface User {
@@ -218,8 +219,10 @@ const UsersPage: React.FC = () => {
         </div>
       )}
 
+      {/* Responsive Layout */}
       <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="overflow-x-auto hidden md:block">
           <table className="min-w-full leading-normal">
             <thead>
               <tr>
@@ -230,7 +233,6 @@ const UsersPage: React.FC = () => {
                         indeterminate={selectedUsers.size > 0 && selectedUsers.size < paginatedUsers.length}
                     />
                 </th>
-                {/* Add onClick handlers for sorting */}
                 <th onClick={() => requestSort('username')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
                 <th onClick={() => requestSort('balance')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Balance</th>
                 <th onClick={() => requestSort('paymentStatus')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Payment Status</th>
@@ -248,7 +250,7 @@ const UsersPage: React.FC = () => {
                     />
                   </td>
                   <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                    <p className="text-gray-900 dark:text-white whitespace-no-wrap font-semibold">{user.username || 'N/A'}</p>
+                    <Link to={`/users/${user.id}`} className="text-gray-900 dark:text-white whitespace-no-wrap font-semibold hover:text-indigo-600 dark:hover:text-indigo-400">{user.username || 'N/A'}</Link>
                     <p className="text-gray-600 dark:text-gray-400 whitespace-no-wrap">{user.email}</p>
                   </td>
                   <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
@@ -280,6 +282,41 @@ const UsersPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+        
+        {/* Mobile Card View */}
+        <div className="md:hidden">
+            {paginatedUsers.map(user => (
+                <div key={user.id} className="p-4 border-b border-gray-200 dark:border-slate-800">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <Link to={`/users/${user.id}`} className="font-bold text-lg text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">{user.username || 'N/A'}</Link>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
+                        </div>
+                        <Checkbox
+                            checked={selectedUsers.has(user.id)}
+                            onChange={() => handleSelectUser(user.id)}
+                            className="mt-1"
+                        />
+                    </div>
+                    <div className="mt-4 flex justify-between items-center">
+                        <div className="text-sm">
+                            <p className="text-gray-600 dark:text-gray-300">Balance: <span className="font-semibold">Rs {user.balance.toFixed(2)}</span></p>
+                            <PaymentStatusBadge status={user.paymentStatus} />
+                        </div>
+                         <div className="flex items-center gap-2">
+                            <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-200 font-medium text-sm" disabled={actionLoading[`save_${user.id}`]}>Edit</button>
+                            {user.paymentStatus === 'pending' && (
+                                <>
+                                <button onClick={() => handleVerifyPayment(user.id)} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full" disabled={actionLoading[`verify_${user.id}`]}><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
+                                <button onClick={() => handleRejectPayment(user.id)} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full" disabled={actionLoading[`reject_${user.id}`]}><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+        
         <Pagination 
             currentPage={currentPage}
             totalPages={Math.ceil(sortedAndFilteredUsers.length / ITEMS_PER_PAGE)}

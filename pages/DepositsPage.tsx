@@ -1,26 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch } from 'firebase/firestore';
+// FIX: Import `updateDoc` to resolve 'Cannot find name' error.
+import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
-import Spinner from '../components/Spinner';
 import { CheckIcon } from '../components/icons/CheckIcon';
 import { XIcon } from '../components/icons/XIcon';
-import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
 
-
-interface FirestoreDepositRequestData {
-  userId: string;
-  amount: number;
-  status: 'pending' | 'approved' | 'rejected';
-  requestedAt: Timestamp;
-  method: string;
-  transactionId: string;
-  senderInfo?: string;
-}
 
 interface DepositRequest {
   id: string;
@@ -42,9 +31,7 @@ const DepositsPage: React.FC = () => {
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
   const { addToast } = useToast();
-  const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
 
-  // New state for advanced features
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'requestedAt', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
@@ -56,24 +43,11 @@ const DepositsPage: React.FC = () => {
   const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
   const [requestToApprove, setRequestToApprove] = useState<DepositRequest | null>(null);
 
-
-  const toggleExpand = (id: string) => {
-    setExpandedRequests(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return newSet;
-    });
-  };
-
   useEffect(() => {
-    // ... (existing useEffect)
     setLoading(true);
-    setExpandedRequests(new Set());
     setSelectedRequests(new Set());
     const q = query(collection(db, 'depositRequests'), where('status', '==', filter));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-        // ... (existing data fetching)
       const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), requestedAt: (doc.data().requestedAt as Timestamp).toDate() } as DepositRequest));
       const enrichedRequests = await Promise.all(requests.map(async req => {
           const userRef = doc(db, 'users', req.userId);
@@ -82,6 +56,10 @@ const DepositsPage: React.FC = () => {
       }));
       setDeposits(enrichedRequests);
       setLoading(false);
+    }, (error) => {
+        console.error("Error fetching deposits:", error);
+        addToast('Error fetching deposits.', 'error');
+        setLoading(false);
     });
     return () => unsubscribe();
   }, [filter, addToast]);
@@ -134,7 +112,26 @@ const DepositsPage: React.FC = () => {
   };
 
   const handleConfirmApprove = async () => {
-    // ... (existing single approval logic)
+    if (!requestToApprove) return;
+    const { id, userId, amount } = requestToApprove;
+    setActionLoading(prev => ({ ...prev, [id]: true }));
+     try {
+        await runTransaction(db, async (transaction) => {
+            const depositRef = doc(db, 'depositRequests', id);
+            const userRef = doc(db, 'users', userId);
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists()) throw new Error("User not found");
+            const newBalance = (userDoc.data().balance || 0) + amount;
+            transaction.update(userRef, { balance: newBalance });
+            transaction.update(depositRef, { status: 'approved' });
+        });
+        addToast('Deposit approved successfully!', 'success');
+    } catch (error) {
+        addToast('Failed to approve deposit.', 'error');
+    } finally {
+        setActionLoading(prev => ({ ...prev, [id]: false }));
+        setIsApproveConfirmOpen(false);
+    }
   };
 
   const openRejectConfirm = (id: string) => {
@@ -143,7 +140,18 @@ const DepositsPage: React.FC = () => {
   };
 
   const handleReject = async () => {
-    // ... (existing single rejection logic)
+    if (!requestToReject) return;
+    const id = requestToReject;
+    setActionLoading(prev => ({ ...prev, [id]: true }));
+    try {
+        await updateDoc(doc(db, 'depositRequests', id), { status: 'rejected' });
+        addToast('Deposit rejected.', 'success');
+    } catch (error) {
+        addToast('Failed to reject deposit.', 'error');
+    } finally {
+        setActionLoading(prev => ({ ...prev, [id]: false }));
+        setIsRejectConfirmOpen(false);
+    }
   };
 
   const handleBulkAction = async (action: 'approve' | 'reject') => {
@@ -182,91 +190,24 @@ const DepositsPage: React.FC = () => {
       }
   };
 
-
-  const renderContent = () => {
-    if (loading) return <div className="text-center mt-10">Loading...</div>;
-    if (paginatedDeposits.length === 0) return <p className="text-center py-10 text-gray-500 dark:text-gray-400">No {filter} requests found.</p>;
-    
-    return (
-      <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full leading-normal">
-            <thead>
-              <tr>
-                {filter === 'pending' && (
-                  <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                    <Checkbox
-                      checked={selectedRequests.size === paginatedDeposits.length && paginatedDeposits.length > 0}
-                      onChange={handleSelectAll}
-                      indeterminate={selectedRequests.size > 0 && selectedRequests.size < paginatedDeposits.length}
-                    />
-                  </th>
-                )}
-                <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
-                <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
-                <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Transaction ID</th>
-                {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedDeposits.map((req) => (
-                <React.Fragment key={req.id}>
-                  <tr>
-                    {filter === 'pending' && (
-                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                          <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />
-                        </td>
-                    )}
-                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                      <div className="flex items-center">
-                        <button onClick={() => toggleExpand(req.id)} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mr-3">
-                          <ChevronDownIcon className={`w-5 h-5 text-gray-500 transition-transform ${expandedRequests.has(req.id) ? 'rotate-180' : ''}`} />
-                        </button>
-                        <p className="text-gray-900 dark:text-white">{req.userEmail}</p>
-                      </div>
-                    </td>
-                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {req.amount.toFixed(2)}</td>
-                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.requestedAt.toLocaleString()}</td>
-                    <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm break-all">{req.transactionId || 'N/A'}</td>
-                    {filter === 'pending' && (
-                      <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => handleApproveClick(req)} disabled={actionLoading[req.id]} className="p-1.5 bg-green-600 text-white rounded-md hover:bg-green-700"><CheckIcon className="w-4 h-4"/></button>
-                          <button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="p-1.5 bg-red-600 text-white rounded-md hover:bg-red-700"><XIcon className="w-4 h-4"/></button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                  {expandedRequests.has(req.id) && (
-                    <tr className="bg-gray-50 dark:bg-slate-800/50">
-                      <td colSpan={filter === 'pending' ? 6 : 5} className="p-4">
-                          <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-200 mb-2">Details</h4>
-                          <div><span className="text-gray-500">Method:</span> {req.method}</div>
-                          {req.senderInfo && <div><span className="text-gray-500">Sender:</span> {req.senderInfo}</div>}
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination 
-            currentPage={currentPage}
-            totalPages={Math.ceil(sortedDeposits.length / ITEMS_PER_PAGE)}
-            onPageChange={setCurrentPage}
-        />
-      </div>
-    );
-  };
-
   return (
     <div className="container mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Deposit Requests</h1>
       
-      <div className="mb-4">
-          {/* ... (existing filter buttons) ... */}
+      <div className="mb-4 flex flex-wrap gap-2">
+         {(['pending', 'approved', 'rejected'] as const).map(status => (
+          <button
+            key={status}
+            onClick={() => setFilter(status)}
+            className={`capitalize px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+              filter === status
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700'
+            }`}
+          >
+            {status}
+          </button>
+        ))}
       </div>
       
        {filter === 'pending' && selectedRequests.size > 0 && (
@@ -279,7 +220,76 @@ const DepositsPage: React.FC = () => {
           </div>
       )}
 
-      {renderContent()}
+      {loading ? <p className="text-center py-10">Loading...</p> : paginatedDeposits.length === 0 ? <p className="text-center py-10 text-gray-500">No {filter} requests found.</p> : (
+        <>
+            {/* Desktop Table */}
+            <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden hidden md:block">
+                <div className="overflow-x-auto">
+                <table className="min-w-full leading-normal">
+                    <thead>
+                    <tr>
+                        {filter === 'pending' && (
+                        <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
+                            <Checkbox
+                            checked={selectedRequests.size === paginatedDeposits.length && paginatedDeposits.length > 0}
+                            onChange={handleSelectAll}
+                            indeterminate={selectedRequests.size > 0 && selectedRequests.size < paginatedDeposits.length}
+                            />
+                        </th>
+                        )}
+                        <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
+                        <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
+                        <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
+                        <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Transaction ID</th>
+                        {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {paginatedDeposits.map((req) => (
+                        <tr key={req.id}>
+                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.userEmail}</td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {req.amount.toFixed(2)}</td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.requestedAt.toLocaleString()}</td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm break-all">{req.transactionId || 'N/A'}</td>
+                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveClick(req)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+                </div>
+                <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedDeposits.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden space-y-4">
+                {paginatedDeposits.map(req => (
+                    <div key={req.id} className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-4">
+                         <div className="flex justify-between items-start">
+                             <div>
+                                <p className="font-bold text-lg text-gray-900 dark:text-white">Rs {req.amount.toFixed(2)}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail}</p>
+                            </div>
+                            {filter === 'pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
+                        </div>
+                        <div className="mt-4 text-sm space-y-1">
+                            <p><span className="font-semibold">Txn ID:</span> <span className="break-all">{req.transactionId}</span></p>
+                            <p><span className="font-semibold">Method:</span> {req.method}</p>
+                            {req.senderInfo && <p><span className="font-semibold">Sender:</span> {req.senderInfo}</p>}
+                            <p className="text-xs text-gray-400 pt-1">{req.requestedAt.toLocaleString()}</p>
+                        </div>
+                        {filter === 'pending' && (
+                            <div className="mt-4 flex justify-end gap-2">
+                                <button onClick={() => handleApproveClick(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
+                                <button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
+                            </div>
+                        )}
+                    </div>
+                ))}
+                 <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedDeposits.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
+            </div>
+        </>
+      )}
       
       {requestToApprove && ( <ConfirmationModal isOpen={isApproveConfirmOpen} onClose={() => setIsApproveConfirmOpen(false)} onConfirm={handleConfirmApprove} title="Approve Deposit" message={`Approve deposit of Rs ${requestToApprove.amount.toFixed(2)} for ${requestToApprove.userEmail}?`} confirmButtonText="Approve" confirmButtonColor="bg-green-600 hover:bg-green-700" />)}
       <ConfirmationModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={handleReject} title="Reject Deposit" message="Are you sure you want to reject this deposit?" />

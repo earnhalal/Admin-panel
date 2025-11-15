@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { collection, query, where, getDocs, doc, runTransaction, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
-import { decideReferralApproval, decideTaskApproval } from '../services/aiService';
+import { decideReferralApproval, decideTaskApproval, decideWithdrawalRequest } from '../services/aiService';
 import { User } from './UsersPage';
 import { Task, UserTask } from './TasksPage';
 import { AiIcon } from '../components/icons/AiIcon';
@@ -18,6 +18,13 @@ interface Referral {
     referrerEmail?: string;
 }
 
+interface WithdrawalRequest {
+  id: string;
+  userId: string;
+  amount: number;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+}
+
 
 const AiAutomationsPage: React.FC = () => {
     const { addToast } = useToast();
@@ -29,6 +36,11 @@ const AiAutomationsPage: React.FC = () => {
     const [isProcessingTasks, setIsProcessingTasks] = useState(false);
     const [taskLogs, setTaskLogs] = useState<string[]>([]);
     const [taskStats, setTaskStats] = useState({ processed: 0, approved: 0, rejected: 0, failed: 0 });
+
+    const [isProcessingWithdrawals, setIsProcessingWithdrawals] = useState(false);
+    const [withdrawalLogs, setWithdrawalLogs] = useState<string[]>([]);
+    const [withdrawalStats, setWithdrawalStats] = useState({ processed: 0, kept_pending: 0, rejected: 0, failed: 0 });
+
 
     const handleApproveBonus = async (referral: Referral) => {
         await runTransaction(db, async (transaction) => {
@@ -188,17 +200,74 @@ const AiAutomationsPage: React.FC = () => {
         }
     };
 
+     const processPendingWithdrawals = async () => {
+        setIsProcessingWithdrawals(true);
+        setWithdrawalLogs(['▶️ Starting AI processing for pending withdrawals...']);
+        setWithdrawalStats({ processed: 0, kept_pending: 0, rejected: 0, failed: 0 });
+
+        try {
+            const q = query(collection(db, 'withdrawalRequests'), where('status', '==', 'Pending'));
+            const snapshot = await getDocs(q);
+            const pending = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WithdrawalRequest));
+
+            if (pending.length === 0) {
+                setWithdrawalLogs(p => [...p, '✅ No pending withdrawals.']);
+                setIsProcessingWithdrawals(false);
+                return;
+            }
+            setWithdrawalLogs(p => [...p, `🔍 Found ${pending.length} pending withdrawal(s).`]);
+
+            for (const request of pending) {
+                setWithdrawalStats(p => ({ ...p, processed: p.processed + 1 }));
+                const userDoc = await getDoc(doc(db, 'users', request.userId));
+                if (!userDoc.exists()) {
+                    setWithdrawalLogs(p => [...p, `[ERROR] User ${request.userId} not found. Skipping.`]);
+                    setWithdrawalStats(p => ({ ...p, failed: p.failed + 1 }));
+                    continue;
+                }
+                const user = { id: userDoc.id, ...userDoc.data() } as User;
+                setWithdrawalLogs(p => [...p, `🤔 Analyzing withdrawal from ${user.email} for Rs ${request.amount}...`]);
+
+                const { decision, reason } = await decideWithdrawalRequest(user, request);
+                setWithdrawalLogs(p => [...p, `💡 AI decision for ${user.email}: ${decision}. Reason: ${reason}`]);
+
+                if (decision === 'REJECT') {
+                    await runTransaction(db, async (transaction) => {
+                        const withdrawalRef = doc(db, 'withdrawalRequests', request.id);
+                        const userRef = doc(db, 'users', request.userId);
+                        const newBalance = user.balance + request.amount;
+                        transaction.update(userRef, { balance: newBalance });
+                        transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: `AI: ${reason}` });
+                    });
+                    setWithdrawalStats(p => ({ ...p, rejected: p.rejected + 1 }));
+                    setWithdrawalLogs(p => [...p, `[REJECTED] Rejected withdrawal for ${user.email}. Funds returned.`]);
+                } else {
+                    setWithdrawalStats(p => ({ ...p, kept_pending: p.kept_pending + 1 }));
+                    setWithdrawalLogs(p => [...p, `[PENDING] Request for ${user.email} left for manual review.`]);
+                }
+            }
+            addToast('AI withdrawal processing complete!', 'success');
+            setWithdrawalLogs(p => [...p, '🏁 Processing complete.']);
+        } catch (error) {
+            addToast('Error during withdrawal processing.', 'error');
+            setWithdrawalLogs(p => [...p, `[FATAL ERROR] ${error instanceof Error ? error.message : 'Unknown error'}`]);
+        } finally {
+            setIsProcessingWithdrawals(false);
+        }
+    };
+
 
     const AutomationCard: React.FC<{
         title: string;
         description: string;
         onRun: () => void;
         isProcessing: boolean;
-        stats: { processed: number; approved: number; rejected: number; failed: number };
+        stats: any; // Simplified for multiple stat types
         logs: string[];
         icon: React.ReactNode;
-    }> = ({ title, description, onRun, isProcessing, stats, logs, icon }) => (
-        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6">
+        resultLabels: { [key: string]: string };
+    }> = ({ title, description, onRun, isProcessing, stats, logs, icon, resultLabels }) => (
+        <div className="bg-white dark:bg-slate-900 shadow-lg rounded-xl p-6">
             <div className="flex items-start gap-4">
                 <div className="bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg">{icon}</div>
                 <div>
@@ -216,13 +285,16 @@ const AiAutomationsPage: React.FC = () => {
                 </button>
                 <div className="flex-1 text-sm text-center sm:text-left text-gray-500 dark:text-gray-300">
                     Processed: <span className="font-bold">{stats.processed}</span> | 
-                    Approved: <span className="font-bold text-green-600 dark:text-green-400">{stats.approved}</span> | 
-                    Rejected: <span className="font-bold text-red-600 dark:text-red-400">{stats.rejected}</span> |
+                    {Object.entries(resultLabels).map(([key, label]) => (
+                        <React.Fragment key={key}>
+                            {` ${label}: `}<span className={`font-bold ${key.includes('reject') ? 'text-red-600 dark:text-red-400' : key.includes('approve') ? 'text-green-600 dark:text-green-400' : ''}`}>{stats[key]}</span> |
+                        </React.Fragment>
+                    ))}
                     Failed: <span className="font-bold text-yellow-600 dark:text-yellow-400">{stats.failed}</span>
                 </div>
             </div>
             {logs.length > 0 && (
-                <div className="mt-4 bg-gray-100 dark:bg-gray-900 rounded-lg p-4 max-h-60 overflow-y-auto">
+                <div className="mt-4 bg-gray-100 dark:bg-slate-800 rounded-lg p-4 max-h-60 overflow-y-auto">
                     <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">{logs.join('\n')}</pre>
                 </div>
             )}
@@ -236,6 +308,16 @@ const AiAutomationsPage: React.FC = () => {
 
             <div className="space-y-8">
                 <AutomationCard 
+                    title="Withdrawal Request Automation"
+                    description="AI will check for suspicious withdrawal patterns and automatically reject high-risk requests."
+                    onRun={processPendingWithdrawals}
+                    isProcessing={isProcessingWithdrawals}
+                    stats={withdrawalStats}
+                    logs={withdrawalLogs}
+                    icon={<AiIcon className="w-6 h-6 text-indigo-500" />}
+                    resultLabels={{ kept_pending: 'Kept Pending', rejected: 'Rejected' }}
+                />
+                <AutomationCard 
                     title="Referral Bonus Automation"
                     description="AI will check if a referred user's payment is 'verified' and approve the bonus for the referrer accordingly."
                     onRun={processPendingReferrals}
@@ -243,6 +325,7 @@ const AiAutomationsPage: React.FC = () => {
                     stats={referralStats}
                     logs={referralLogs}
                     icon={<AiIcon className="w-6 h-6 text-indigo-500" />}
+                    resultLabels={{ approved: 'Approved', rejected: 'Rejected' }}
                 />
                  <AutomationCard 
                     title="Task Submission Automation"
@@ -252,6 +335,7 @@ const AiAutomationsPage: React.FC = () => {
                     stats={taskStats}
                     logs={taskLogs}
                     icon={<AiIcon className="w-6 h-6 text-indigo-500" />}
+                    resultLabels={{ approved: 'Approved', rejected: 'Rejected' }}
                 />
             </div>
         </div>

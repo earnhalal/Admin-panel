@@ -1,0 +1,160 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import { User } from './UsersPage';
+import { Task } from './TasksPage';
+import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
+
+interface Transaction {
+    id: string;
+    type: 'Deposit' | 'Withdrawal';
+    amount: number;
+    status: string;
+    requestedAt: Timestamp;
+}
+
+interface UserTaskSubmission {
+    id: string;
+    taskId: string;
+    taskTitle?: string;
+    status: 'submitted' | 'approved' | 'rejected';
+    taskReward?: number;
+}
+
+const UserProfilePage: React.FC = () => {
+    const { userId } = useParams<{ userId: string }>();
+    const [user, setUser] = useState<User | null>(null);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [taskSubmissions, setTaskSubmissions] = useState<UserTaskSubmission[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchUserData = async () => {
+            if (!userId) return;
+            setLoading(true);
+
+            // Fetch User Details
+            const userRef = doc(db, 'users', userId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+                setUser({ id: userSnap.id, ...userSnap.data() } as User);
+            }
+
+            // Fetch Transactions (Deposits & Withdrawals)
+            const depositsQuery = query(collection(db, 'depositRequests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
+            const withdrawalsQuery = query(collection(db, 'withdrawalRequests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
+            
+            const [depositsSnap, withdrawalsSnap] = await Promise.all([getDocs(depositsQuery), getDocs(withdrawalsQuery)]);
+
+            const userTransactions: Transaction[] = [];
+            depositsSnap.forEach(d => userTransactions.push({ id: d.id, type: 'Deposit', ...(d.data() as any) }));
+            withdrawalsSnap.forEach(d => userTransactions.push({ id: d.id, type: 'Withdrawal', ...(d.data() as any) }));
+            
+            userTransactions.sort((a, b) => b.requestedAt.toMillis() - a.requestedAt.toMillis());
+            setTransactions(userTransactions);
+
+            // Fetch Task Submissions
+            const submissionsQuery = query(collection(db, 'userTasks'), where('userId', '==', userId));
+            const submissionsSnap = await getDocs(submissionsQuery);
+            const subsData = submissionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserTaskSubmission));
+
+            const enrichedSubs = await Promise.all(subsData.map(async sub => {
+                const taskSnap = await getDoc(doc(db, 'tasks', sub.taskId));
+                return { ...sub, taskTitle: taskSnap.exists() ? (taskSnap.data() as Task).title : 'Unknown Task', taskReward: taskSnap.exists() ? (taskSnap.data() as Task).reward : 0 };
+            }));
+            setTaskSubmissions(enrichedSubs);
+
+            setLoading(false);
+        };
+
+        fetchUserData();
+    }, [userId]);
+    
+    const StatusBadge: React.FC<{status: string}> = ({ status }) => {
+        const lowerStatus = status.toLowerCase();
+        const colors: {[key: string]: string} = {
+            approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+            verified: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+            pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+            submitted: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+            rejected: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+        };
+        return <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colors[lowerStatus] || 'bg-gray-100 text-gray-800'}`}>{status}</span>
+    }
+
+    if (loading) return <div className="text-center mt-10">Loading user profile...</div>;
+    if (!user) return <div className="text-center mt-10">User not found.</div>;
+
+    return (
+        <div className="container mx-auto">
+            <Link to="/users" className="inline-flex items-center gap-2 text-indigo-600 dark:text-indigo-400 hover:underline mb-4">
+                <ArrowRightIcon className="w-4 h-4 transform rotate-180" />
+                Back to All Users
+            </Link>
+            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white">{user.username || 'User Profile'}</h1>
+                    <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-gray-500 dark:text-gray-400">Current Balance</p>
+                    <p className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {user.balance.toFixed(2)}</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
+                        <h2 className="text-xl font-semibold mb-4">User Details</h2>
+                        <div className="space-y-2 text-sm">
+                           <p><strong>Phone:</strong> {user.phone || 'N/A'}</p>
+                           <p><strong>Joined:</strong> {user.createdAt?.toDate().toLocaleDateString() || 'N/A'}</p>
+                           <p><strong>Payment Status:</strong> <StatusBadge status={user.paymentStatus} /></p>
+                           <p><strong>Is Paid User:</strong> {user.isPaid ? 'Yes' : 'No'}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
+                        <h2 className="text-xl font-semibold mb-4">Transaction History</h2>
+                        <ul className="divide-y divide-gray-200 dark:divide-slate-800">
+                            {transactions.slice(0, 5).map(tx => (
+                                <li key={tx.id} className="py-3 flex justify-between items-center">
+                                    <div>
+                                        <p className={`font-semibold ${tx.type === 'Deposit' ? 'text-green-600' : 'text-red-500'}`}>{tx.type}</p>
+                                        <p className="text-xs text-gray-500">{tx.requestedAt.toDate().toLocaleString()}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-bold">Rs {tx.amount.toFixed(2)}</p>
+                                        <StatusBadge status={tx.status} />
+                                    </div>
+                                </li>
+                            ))}
+                             {transactions.length === 0 && <p className="text-center py-4 text-gray-500">No transactions found.</p>}
+                        </ul>
+                    </div>
+
+                     <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
+                        <h2 className="text-xl font-semibold mb-4">Task Submission History</h2>
+                         <ul className="divide-y divide-gray-200 dark:divide-slate-800">
+                            {taskSubmissions.slice(0, 5).map(sub => (
+                                <li key={sub.id} className="py-3 flex justify-between items-center">
+                                    <div>
+                                        <p className="font-semibold">{sub.taskTitle}</p>
+                                        <p className="text-xs text-gray-500">Reward: Rs {sub.taskReward?.toFixed(2)}</p>
+                                    </div>
+                                    <StatusBadge status={sub.status} />
+                                </li>
+                            ))}
+                            {taskSubmissions.length === 0 && <p className="text-center py-4 text-gray-500">No task submissions found.</p>}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default UserProfilePage;

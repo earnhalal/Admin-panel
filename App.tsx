@@ -13,6 +13,7 @@ import AiAutomationsPage from './pages/AiAutomationsPage';
 import FraudDetectionPage from './pages/FraudDetectionPage';
 import DepositsPage from './pages/DepositsPage';
 import SettingsPage from './pages/SettingsPage';
+import UserProfilePage from './pages/UserProfilePage';
 
 const App: React.FC = () => {
   return (
@@ -26,6 +27,7 @@ const App: React.FC = () => {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="users" element={<UsersPage />} />
+              <Route path="users/:userId" element={<UserProfilePage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />
