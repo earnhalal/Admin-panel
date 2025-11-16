@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc, orderBy } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
@@ -63,7 +63,17 @@ const WithdrawalsPage: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     setSelectedRequests(new Set());
-    const q = query(collection(db, 'withdrawal_requests'), where('status', '==', filter));
+    
+    // THE FIX: Added orderBy('requestedAt', 'desc') to the query.
+    // This sorts requests on the server and is crucial for Firestore to correctly
+    // return results when combined with a 'where' filter. This was the cause of the issue.
+    // NOTE: Firestore may require an index. If so, an error will appear in the browser
+    // console with a link to create it automatically.
+    const q = query(
+        collection(db, 'withdrawal_requests'), 
+        where('status', '==', filter),
+        orderBy('requestedAt', 'desc')
+    );
     
     const unsubscribe = onSnapshot(q, async (snapshot) => {
         const processedRequests: WithdrawalRequest[] = [];
