@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { Task } from './TasksPage';
 import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
+import { useToast } from '../contexts/ToastContext';
+import ConfirmationModal from '../components/ConfirmationModal';
 
 interface Transaction {
     id: string;
@@ -24,10 +26,13 @@ interface UserTaskSubmission {
 
 const UserProfilePage: React.FC = () => {
     const { userId } = useParams<{ userId: string }>();
+    const navigate = useNavigate();
+    const { addToast } = useToast();
     const [user, setUser] = useState<User | null>(null);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [taskSubmissions, setTaskSubmissions] = useState<UserTaskSubmission[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -71,6 +76,20 @@ const UserProfilePage: React.FC = () => {
         fetchUserData();
     }, [userId]);
     
+    const handleDeleteUser = async () => {
+        if (!userId) return;
+
+        try {
+            await deleteDoc(doc(db, 'users', userId));
+            addToast('User data permanently deleted.', 'success');
+            navigate('/users');
+        } catch (error) {
+            console.error("Error deleting user:", error);
+            addToast('Failed to delete user.', 'error');
+        }
+        setIsDeleteConfirmOpen(false);
+    };
+
     const StatusBadge: React.FC<{status: string}> = ({ status }) => {
         const lowerStatus = status.toLowerCase();
         const colors: {[key: string]: string} = {
@@ -119,6 +138,19 @@ const UserProfilePage: React.FC = () => {
                            <p><strong>Payment Status:</strong> <StatusBadge status={user.paymentStatus} /></p>
                            <p><strong>Is Paid User:</strong> {user.isPaid ? 'Yes' : 'No'}</p>
                         </div>
+
+                        <div className="mt-6 border-t border-gray-200 dark:border-slate-800 pt-4">
+                            <h3 className="text-md font-semibold text-red-600 dark:text-red-400">Danger Zone</h3>
+                            <p className="mt-1 mb-3 text-xs text-gray-500 dark:text-gray-400">
+                                This action is irreversible. It will permanently delete the user's data from the database but cannot remove their authentication record.
+                            </p>
+                            <button
+                                onClick={() => setIsDeleteConfirmOpen(true)}
+                                className="w-full text-center px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                            >
+                                Delete User Permanently
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -159,6 +191,15 @@ const UserProfilePage: React.FC = () => {
                     </div>
                 </div>
             </div>
+            <ConfirmationModal
+                isOpen={isDeleteConfirmOpen}
+                onClose={() => setIsDeleteConfirmOpen(false)}
+                onConfirm={handleDeleteUser}
+                title="Delete User"
+                message={`Are you sure you want to permanently delete ${user.email}? This action cannot be undone.`}
+                confirmButtonText="Delete"
+                confirmButtonColor="bg-red-600 hover:bg-red-700"
+            />
         </div>
     );
 };
