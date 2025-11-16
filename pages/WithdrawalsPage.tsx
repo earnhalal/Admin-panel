@@ -16,7 +16,7 @@ interface WithdrawalRequest {
   id: string;
   userId: string;
   amount: number;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   requestedAt: Date;
   userEmail?: string;
   transactionId?: string;
@@ -44,7 +44,7 @@ type SortConfig = { key: keyof WithdrawalRequest; direction: 'ascending' | 'desc
 const WithdrawalsPage: React.FC = () => {
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'Pending' | 'Approved' | 'Rejected'>('Pending');
+  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
   const { addToast } = useToast();
   
@@ -63,7 +63,7 @@ const WithdrawalsPage: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     setSelectedRequests(new Set());
-    const q = query(collection(db, 'withdrawalRequests'), where('status', '==', filter));
+    const q = query(collection(db, 'withdrawal_requests'), where('status', '==', filter));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
         const requests = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -148,7 +148,7 @@ const WithdrawalsPage: React.FC = () => {
           
           const feeAmount = (amount * withdrawalFeeRate) / 100;
           
-          const withdrawalRef = doc(db, 'withdrawalRequests', id);
+          const withdrawalRef = doc(db, 'withdrawal_requests', id);
           const userRef = doc(db, 'users', userId);
           const userDoc = await transaction.get(userRef);
           
@@ -158,7 +158,7 @@ const WithdrawalsPage: React.FC = () => {
           const newBalance = userDoc.data().balance - amount;
           
           transaction.update(userRef, { balance: newBalance });
-          transaction.update(withdrawalRef, { status: 'Approved', transactionId: enteredTransactionId });
+          transaction.update(withdrawalRef, { status: 'approved', transactionId: enteredTransactionId });
 
           if (feeAmount > 0) {
               const revenueRef = collection(db, 'revenueTransactions');
@@ -196,7 +196,7 @@ const WithdrawalsPage: React.FC = () => {
     setActionLoading(prev => ({...prev, [id]: true}));
     try {
         await runTransaction(db, async (transaction) => {
-            const withdrawalRef = doc(db, 'withdrawalRequests', id);
+            const withdrawalRef = doc(db, 'withdrawal_requests', id);
             const userRef = doc(db, 'users', userId);
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("User not found.");
@@ -206,7 +206,7 @@ const WithdrawalsPage: React.FC = () => {
             // const newBalance = userDoc.data().balance + amount;
             // transaction.update(userRef, { balance: newBalance });
             
-            transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: reason });
+            transaction.update(withdrawalRef, { status: 'rejected', rejectionReason: reason });
         });
         addToast('Withdrawal rejected.', 'success');
     } catch (error) {
@@ -226,8 +226,8 @@ const WithdrawalsPage: React.FC = () => {
       selectedRequests.forEach(reqId => {
           const request = withdrawals.find(w => w.id === reqId);
           if (request) {
-              const withdrawalRef = doc(db, 'withdrawalRequests', reqId);
-              batch.update(withdrawalRef, { status: 'Rejected', rejectionReason: 'Bulk rejected by admin.' });
+              const withdrawalRef = doc(db, 'withdrawal_requests', reqId);
+              batch.update(withdrawalRef, { status: 'rejected', rejectionReason: 'Bulk rejected by admin.' });
           }
       });
 
@@ -246,11 +246,11 @@ const WithdrawalsPage: React.FC = () => {
     <div className="container mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Withdrawal Requests</h1>
       <div className="mb-4 flex flex-wrap gap-2">
-        {(['Pending', 'Approved', 'Rejected'] as const).map(status => (
+        {(['pending', 'approved', 'rejected'] as const).map(status => (
           <button
             key={status}
             onClick={() => setFilter(status)}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            className={`capitalize px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
               filter === status
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700'
@@ -261,7 +261,7 @@ const WithdrawalsPage: React.FC = () => {
         ))}
       </div>
 
-      {filter === 'Pending' && selectedRequests.size > 0 && (
+      {filter === 'pending' && selectedRequests.size > 0 && (
           <div className="mb-4 bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg flex items-center justify-between">
               <span className="text-sm font-medium text-indigo-800 dark:text-indigo-200">{selectedRequests.size} request(s) selected</span>
               <div className="flex gap-2">
@@ -280,7 +280,7 @@ const WithdrawalsPage: React.FC = () => {
                     <table className="min-w-full leading-normal">
                     <thead>
                         <tr>
-                        {filter === 'Pending' && (
+                        {filter === 'pending' && (
                             <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
                             <Checkbox
                                 checked={selectedRequests.size === paginatedWithdrawals.length && paginatedWithdrawals.length > 0}
@@ -292,22 +292,22 @@ const WithdrawalsPage: React.FC = () => {
                         <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User & Details</th>
                         <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
                         <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
-                        {filter !== 'Pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Details</th>}
-                        {filter === 'Pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
+                        {filter !== 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Details</th>}
+                        {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
                         {paginatedWithdrawals.map((req) => (
                         <tr key={req.id}>
-                            {filter === 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
+                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
                                 <p className="font-semibold">{req.userEmail}</p>
                                 <p className="text-xs text-gray-500">{req.method}: {req.accountNumber}</p>
                             </td>
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>Rs {req.amount.toFixed(2)}</p></td>
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>{req.requestedAt.toLocaleString()}</p></td>
-                            {filter !== 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="break-all">{req.transactionId || 'N/A'}</p>{req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}</td>}
-                            {filter === 'Pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
+                            {filter !== 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="break-all">{req.transactionId || 'N/A'}</p>{req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}</td>}
+                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
                         </tr>
                         ))}
                     </tbody>
@@ -325,7 +325,7 @@ const WithdrawalsPage: React.FC = () => {
                                 <p className="font-bold text-lg text-gray-900 dark:text-white">Rs {req.amount.toFixed(2)}</p>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail}</p>
                             </div>
-                            {filter === 'Pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
+                            {filter === 'pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
                         </div>
                         <div className="mt-4 text-sm space-y-1">
                             <p><span className="font-semibold">Method:</span> {req.method}</p>
@@ -334,13 +334,13 @@ const WithdrawalsPage: React.FC = () => {
                             {req.bankName && <p><span className="font-semibold">Bank:</span> {req.bankName}</p>}
                             <p className="text-xs text-gray-400 pt-1">{req.requestedAt.toLocaleString()}</p>
                         </div>
-                         {filter !== 'Pending' && (
+                         {filter !== 'pending' && (
                             <div className="mt-2 text-sm">
                                 {req.transactionId && <p><span className="font-semibold">Txn ID:</span> <span className="break-all">{req.transactionId}</span></p>}
                                 {req.rejectionReason && <p><span className="font-semibold text-red-500">Reason:</span> {req.rejectionReason}</p>}
                             </div>
                          )}
-                        {filter === 'Pending' && (
+                        {filter === 'pending' && (
                             <div className="mt-4 flex justify-end gap-2">
                                 <button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
                                 <button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>

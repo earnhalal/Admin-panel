@@ -22,7 +22,7 @@ interface WithdrawalRequest {
   id: string;
   userId: string;
   amount: number;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
 }
 
 
@@ -206,7 +206,7 @@ const AiAutomationsPage: React.FC = () => {
         setWithdrawalStats({ processed: 0, kept_pending: 0, rejected: 0, failed: 0 });
 
         try {
-            const q = query(collection(db, 'withdrawalRequests'), where('status', '==', 'Pending'));
+            const q = query(collection(db, 'withdrawal_requests'), where('status', '==', 'pending'));
             const snapshot = await getDocs(q);
             const pending = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WithdrawalRequest));
 
@@ -233,11 +233,11 @@ const AiAutomationsPage: React.FC = () => {
 
                 if (decision === 'REJECT') {
                     await runTransaction(db, async (transaction) => {
-                        const withdrawalRef = doc(db, 'withdrawalRequests', request.id);
+                        const withdrawalRef = doc(db, 'withdrawal_requests', request.id);
                         const userRef = doc(db, 'users', request.userId);
                         const newBalance = user.balance + request.amount;
                         transaction.update(userRef, { balance: newBalance });
-                        transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: `AI: ${reason}` });
+                        transaction.update(withdrawalRef, { status: 'rejected', rejectionReason: `AI: ${reason}` });
                     });
                     setWithdrawalStats(p => ({ ...p, rejected: p.rejected + 1 }));
                     setWithdrawalLogs(p => [...p, `[REJECTED] Rejected withdrawal for ${user.email}. Funds returned.`]);

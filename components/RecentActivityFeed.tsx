@@ -25,7 +25,7 @@ const RecentActivityFeed: React.FC = () => {
     useEffect(() => {
         const queries = {
             users: query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(5)),
-            withdrawals: query(collection(db, 'withdrawalRequests'), orderBy('requestedAt', 'desc'), limit(5)),
+            withdrawals: query(collection(db, 'withdrawal_requests'), orderBy('requestedAt', 'desc'), limit(5)),
             deposits: query(collection(db, 'depositRequests'), orderBy('requestedAt', 'desc'), limit(5))
         };
 

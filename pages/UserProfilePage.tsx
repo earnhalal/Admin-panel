@@ -48,7 +48,7 @@ const UserProfilePage: React.FC = () => {
 
             // Fetch Transactions (Deposits & Withdrawals)
             const depositsQuery = query(collection(db, 'depositRequests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
-            const withdrawalsQuery = query(collection(db, 'withdrawalRequests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
+            const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
             
             const [depositsSnap, withdrawalsSnap] = await Promise.all([getDocs(depositsQuery), getDocs(withdrawalsQuery)]);
 

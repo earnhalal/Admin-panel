@@ -61,7 +61,7 @@ const DashboardPage: React.FC = () => {
       setLoadingBalance(false);
     });
 
-    const withdrawalsQuery = query(collection(db, 'withdrawalRequests'), where('status', '==', 'pending'));
+    const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('status', '==', 'pending'));
     const unsubscribeWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
       setPendingWithdrawals(snapshot.size);
       setLoadingWithdrawals(false);
