@@ -22,8 +22,8 @@ const NotificationBell: React.FC = () => {
 
     useEffect(() => {
         const queries = {
-            deposit: query(collection(db, 'depositRequests'), where('status', '==', 'pending')),
-            withdrawal: query(collection(db, 'withdrawal_requests'), where('status', '==', 'pending')),
+            deposit: query(collection(db, 'deposit_requests'), where('status', '==', 'Pending')),
+            withdrawal: query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending')),
             task: query(collection(db, 'userTasks'), where('status', '==', 'submitted')),
             referral: query(collection(db, 'referrals'), where('status', '==', 'pending_bonus'))
         };

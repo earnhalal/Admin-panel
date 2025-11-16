@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, updateDoc, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
@@ -8,14 +8,15 @@ import { CheckIcon } from '../components/icons/CheckIcon';
 import { XIcon } from '../components/icons/XIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
+import DepositApprovalModal from '../components/DepositApprovalModal';
 
 
-interface DepositRequest {
+export interface DepositRequest {
   id: string;
   userId: string;
   amount: number;
-  status: 'pending' | 'approved' | 'rejected';
-  requestedAt: Date;
+  status: 'pending' | 'approved' | 'rejected' | 'Pending' | 'Approved' | 'Rejected';
+  createdAt: Date;
   userEmail?: string;
   method: string;
   transactionId: string;
@@ -31,7 +32,7 @@ const DepositsPage: React.FC = () => {
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
   const { addToast } = useToast();
 
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'requestedAt', direction: 'descending' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
   const ITEMS_PER_PAGE = 10;
@@ -39,19 +40,51 @@ const DepositsPage: React.FC = () => {
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<string | null>(null);
 
-  const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
-  const [requestToApprove, setRequestToApprove] = useState<DepositRequest | null>(null);
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [approvalPayload, setApprovalPayload] = useState<DepositRequest | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setSelectedRequests(new Set());
-    const q = query(collection(db, 'depositRequests'), where('status', '==', filter));
+    
+    // Capitalize the filter status to match the database value (e.g., "Pending").
+    const queryStatus = filter.charAt(0).toUpperCase() + filter.slice(1);
+
+    const q = query(collection(db, 'deposit_requests'), where('status', '==', queryStatus), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), requestedAt: (doc.data().requestedAt as Timestamp).toDate() } as DepositRequest));
+      const requests: DepositRequest[] = [];
+      snapshot.docs.forEach(doc => {
+          try {
+              const data = doc.data();
+              let createdAtDate: Date;
+              
+              if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+                  createdAtDate = (data.createdAt as Timestamp).toDate();
+              } else {
+                  console.warn(`Missing or invalid 'createdAt' timestamp in doc ${doc.id}`);
+                  createdAtDate = new Date(0); // Fallback to epoch
+              }
+              
+              requests.push({ 
+                  ...data,
+                  id: doc.id, 
+                  createdAt: createdAtDate
+              } as DepositRequest);
+
+          } catch (error) {
+              console.error(`Failed to process deposit document ${doc.id}:`, error);
+          }
+      });
+
       const enrichedRequests = await Promise.all(requests.map(async req => {
+        try {
           const userRef = doc(db, 'users', req.userId);
           const userSnap = await getDoc(userRef);
           return userSnap.exists() ? { ...req, userEmail: (userSnap.data() as User).email } : { ...req, userEmail: 'Unknown User' };
+        } catch (error) {
+          console.error(`Failed to enrich request ${req.id} with user data:`, error);
+          return { ...req, userEmail: 'Error fetching user' };
+        }
       }));
       setDeposits(enrichedRequests);
       setLoading(false);
@@ -105,18 +138,28 @@ const DepositsPage: React.FC = () => {
       }
   };
   
-  const handleApproveClick = (request: DepositRequest) => {
-    setRequestToApprove(request);
-    setIsApproveConfirmOpen(true);
+  const openApprovalModal = (request: DepositRequest) => {
+    setApprovalPayload(request);
+    setIsApprovalModalOpen(true);
   };
 
-  const handleConfirmApprove = async (reqToApprove?: DepositRequest) => {
-    const request = reqToApprove || requestToApprove;
-    if (!request) return;
-    const { id, userId, amount } = request;
+  const handleConfirmApprove = async (requestToApprove: DepositRequest) => {
+    if (!requestToApprove) return;
+    const { id, userId, amount, transactionId } = requestToApprove;
     
     setActionLoading(prev => ({ ...prev, [id]: true }));
      try {
+        // DUPLICATE TRANSACTION ID CHECK
+        const duplicateQuery = query(
+            collection(db, 'deposit_requests'),
+            where('transactionId', '==', transactionId),
+            where('status', '==', 'Approved')
+        );
+        const duplicateSnapshot = await getDocs(duplicateQuery);
+        if (!duplicateSnapshot.empty) {
+            throw new Error(`Transaction ID "${transactionId}" has already been used.`);
+        }
+
         await runTransaction(db, async (transaction) => {
             const settingsRef = doc(db, 'settings', 'global');
             const settingsDoc = await transaction.get(settingsRef);
@@ -125,14 +168,27 @@ const DepositsPage: React.FC = () => {
             const feeAmount = (amount * depositFeeRate) / 100;
             const netAmount = amount - feeAmount;
 
-            const depositRef = doc(db, 'depositRequests', id);
+            const depositRef = doc(db, 'deposit_requests', id);
             const userRef = doc(db, 'users', userId);
+            const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("User not found");
             
             const newBalance = (userDoc.data().balance || 0) + netAmount;
             transaction.update(userRef, { balance: newBalance });
-            transaction.update(depositRef, { status: 'approved' });
+            transaction.update(depositRef, { status: 'Approved' });
+            
+            // Create user-facing transaction history
+            const { createdAt, method } = requestToApprove;
+            const userTransactionData = {
+                amount,
+                createdAt: Timestamp.fromDate(createdAt),
+                status: 'Approved',
+                transactionId,
+                type: 'Deposit',
+                method,
+            };
+            transaction.set(userTransactionRef, userTransactionData, { merge: true });
 
             if (feeAmount > 0) {
               const revenueRef = collection(db, 'revenueTransactions');
@@ -153,7 +209,10 @@ const DepositsPage: React.FC = () => {
         console.error(error);
     } finally {
         setActionLoading(prev => ({ ...prev, [id]: false }));
-        setIsApproveConfirmOpen(false);
+        if (approvalPayload && approvalPayload.id === id) {
+          setIsApprovalModalOpen(false);
+          setApprovalPayload(null);
+        }
     }
   };
 
@@ -166,12 +225,37 @@ const DepositsPage: React.FC = () => {
     const id = reqId || requestToReject;
     if (!id) return;
 
+    const request = deposits.find(d => d.id === id);
+    if (!request) {
+        addToast('Could not find request to reject.', 'error');
+        return;
+    }
+    const { userId, amount, createdAt, method, transactionId } = request;
+
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-        await updateDoc(doc(db, 'depositRequests', id), { status: 'rejected' });
+        await runTransaction(db, async (transaction) => {
+            const depositRef = doc(db, 'deposit_requests', id);
+            const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
+
+            // 1. Update main deposit request
+            transaction.update(depositRef, { status: 'Rejected' });
+
+            // 2. Update user's personal transaction history
+            const userTransactionData = {
+                amount,
+                createdAt: Timestamp.fromDate(createdAt),
+                status: 'Rejected',
+                transactionId,
+                type: 'Deposit',
+                method,
+            };
+            transaction.set(userTransactionRef, userTransactionData, { merge: true });
+        });
         addToast('Deposit rejected.', 'success');
     } catch (error) {
-        addToast('Failed to reject deposit.', 'error');
+        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Failed to reject deposit: ${message}`, 'error');
     } finally {
         setActionLoading(prev => ({ ...prev, [id]: false }));
         setIsRejectConfirmOpen(false);
@@ -254,7 +338,7 @@ const DepositsPage: React.FC = () => {
                         )}
                         <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
                         <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                        <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
+                        <th onClick={() => requestSort('createdAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
                         <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Transaction ID</th>
                         {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
                     </tr>
@@ -265,9 +349,9 @@ const DepositsPage: React.FC = () => {
                             {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.userEmail}</td>
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {req.amount.toFixed(2)}</td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.requestedAt.toLocaleString()}</td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.createdAt.getTime() === 0 ? 'Date unavailable' : req.createdAt.toLocaleString()}</td>
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm break-all">{req.transactionId || 'N/A'}</td>
-                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveClick(req)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
+                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
                         </tr>
                     ))}
                     </tbody>
@@ -291,11 +375,11 @@ const DepositsPage: React.FC = () => {
                             <p><span className="font-semibold">Txn ID:</span> <span className="break-all">{req.transactionId}</span></p>
                             <p><span className="font-semibold">Method:</span> {req.method}</p>
                             {req.senderInfo && <p><span className="font-semibold">Sender:</span> {req.senderInfo}</p>}
-                            <p className="text-xs text-gray-400 pt-1">{req.requestedAt.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400 pt-1">{req.createdAt.getTime() === 0 ? 'Date unavailable' : req.createdAt.toLocaleString()}</p>
                         </div>
                         {filter === 'pending' && (
                             <div className="mt-4 flex justify-end gap-2">
-                                <button onClick={() => handleApproveClick(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
+                                <button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
                                 <button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
                             </div>
                         )}
@@ -306,7 +390,13 @@ const DepositsPage: React.FC = () => {
         </>
       )}
       
-      {requestToApprove && ( <ConfirmationModal isOpen={isApproveConfirmOpen} onClose={() => setIsApproveConfirmOpen(false)} onConfirm={() => handleConfirmApprove()} title="Approve Deposit" message={`Approve deposit of Rs ${requestToApprove.amount.toFixed(2)} for ${requestToApprove.userEmail}?`} confirmButtonText="Approve" confirmButtonColor="bg-green-600 hover:bg-green-700" />)}
+      <DepositApprovalModal 
+        isOpen={isApprovalModalOpen}
+        onClose={() => { setIsApprovalModalOpen(false); setApprovalPayload(null); }}
+        onConfirm={() => approvalPayload && handleConfirmApprove(approvalPayload)}
+        request={approvalPayload}
+        isLoading={approvalPayload ? actionLoading[approvalPayload.id] : false}
+      />
       <ConfirmationModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={() => handleReject()} title="Reject Deposit" message="Are you sure you want to reject this deposit?" />
     </div>
   );

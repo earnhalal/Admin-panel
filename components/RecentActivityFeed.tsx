@@ -25,8 +25,8 @@ const RecentActivityFeed: React.FC = () => {
     useEffect(() => {
         const queries = {
             users: query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(5)),
-            withdrawals: query(collection(db, 'withdrawal_requests'), orderBy('requestedAt', 'desc'), limit(5)),
-            deposits: query(collection(db, 'depositRequests'), orderBy('requestedAt', 'desc'), limit(5))
+            withdrawals: query(collection(db, 'withdrawal_requests'), orderBy('createdAt', 'desc'), limit(5)),
+            deposits: query(collection(db, 'deposit_requests'), orderBy('createdAt', 'desc'), limit(5))
         };
 
         const unsubs = Object.entries(queries).map(([type, q]) => 
@@ -34,7 +34,7 @@ const RecentActivityFeed: React.FC = () => {
                 const newActivities = snapshot.docs.map(doc => {
                     const data = doc.data();
                     let timestamp: Date;
-                    const dateSource = type === 'users' ? data.createdAt : data.requestedAt;
+                    const dateSource = data.createdAt;
 
                     if (dateSource && typeof dateSource.toDate === 'function') {
                         timestamp = (dateSource as Timestamp).toDate();
@@ -75,6 +75,7 @@ const RecentActivityFeed: React.FC = () => {
     }, []);
     
     const timeSince = (date: Date) => {
+        if (date.getTime() === 0) return 'a while ago';
         const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
         let interval = seconds / 31536000;
         if (interval > 1) return Math.floor(interval) + " years ago";

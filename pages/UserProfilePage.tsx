@@ -13,7 +13,7 @@ interface Transaction {
     type: 'Deposit' | 'Withdrawal';
     amount: number;
     status: string;
-    requestedAt: Date;
+    createdAt: Date;
 }
 
 interface UserTaskSubmission {
@@ -47,17 +47,17 @@ const UserProfilePage: React.FC = () => {
             }
 
             // Fetch Transactions (Deposits & Withdrawals)
-            const depositsQuery = query(collection(db, 'depositRequests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
-            const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
+            const depositsQuery = query(collection(db, 'deposit_requests'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+            const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
             
             const processTransactions = (snapshot: any, type: 'Deposit' | 'Withdrawal'): Transaction[] => {
                 return snapshot.docs.map((d: any) => {
                     const data = d.data();
                     let date: Date;
-                    if (data.requestedAt && typeof data.requestedAt.toDate === 'function') {
-                        date = data.requestedAt.toDate();
-                    } else if (data.requestedAt) {
-                        date = new Date(data.requestedAt);
+                    if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+                        date = data.createdAt.toDate();
+                    } else if (data.createdAt) {
+                        date = new Date(data.createdAt);
                         if (isNaN(date.getTime())) date = new Date(0); // Invalid date fallback
                     } else {
                         date = new Date(0); // Missing date fallback
@@ -66,7 +66,7 @@ const UserProfilePage: React.FC = () => {
                         ...data,
                         id: d.id,
                         type,
-                        requestedAt: date,
+                        createdAt: date,
                     } as Transaction;
                 });
             };
@@ -78,7 +78,7 @@ const UserProfilePage: React.FC = () => {
                 ...processTransactions(withdrawalsSnap, 'Withdrawal'),
             ];
             
-            userTransactions.sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
+            userTransactions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
             setTransactions(userTransactions);
 
             // Fetch Task Submissions
@@ -184,7 +184,7 @@ const UserProfilePage: React.FC = () => {
                                 <li key={tx.id} className="py-3 flex justify-between items-center">
                                     <div>
                                         <p className={`font-semibold ${tx.type === 'Deposit' ? 'text-green-600' : 'text-red-500'}`}>{tx.type}</p>
-                                        <p className="text-xs text-gray-500">{tx.requestedAt.toLocaleString()}</p>
+                                        <p className="text-xs text-gray-500">{tx.createdAt.toLocaleString()}</p>
                                     </div>
                                     <div className="text-right">
                                         <p className="font-bold">Rs {tx.amount.toFixed(2)}</p>
