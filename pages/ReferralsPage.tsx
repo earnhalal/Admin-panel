@@ -96,11 +96,43 @@ const ReferralsPage: React.FC = () => {
     };
     
     const handleApproveBonus = async (referral: Referral) => {
-        // ... (existing implementation)
+        setActionLoading(prev => ({ ...prev, [referral.id]: true }));
+        try {
+            await runTransaction(db, async (transaction) => {
+                const referrerRef = doc(db, 'users', referral.referrerId);
+                const referralRef = doc(db, 'referrals', referral.id);
+
+                const referrerDoc = await transaction.get(referrerRef);
+                if (!referrerDoc.exists()) {
+                    throw new Error("Referrer user not found!");
+                }
+                
+                const newBalance = referrerDoc.data().balance + referral.bonusAmount;
+                transaction.update(referrerRef, { balance: newBalance });
+                transaction.update(referralRef, { status: 'approved' });
+            });
+            addToast("Referral bonus approved successfully!", "success");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to approve bonus: ${message}`, "error");
+            console.error(error);
+        } finally {
+            setActionLoading(prev => ({ ...prev, [referral.id]: false }));
+        }
     };
 
     const handleRejectBonus = async (referralId: string) => {
-        // ... (existing implementation)
+        setActionLoading(prev => ({ ...prev, [referralId]: true }));
+        try {
+            const referralRef = doc(db, 'referrals', referralId);
+            await updateDoc(referralRef, { status: 'rejected' });
+            addToast("Referral bonus rejected.", "success");
+        } catch (error) {
+            addToast("Failed to reject bonus.", "error");
+            console.error(error);
+        } finally {
+            setActionLoading(prev => ({ ...prev, [referralId]: false }));
+        }
     };
 
     const handleBulkAction = async (action: 'approve' | 'reject') => {

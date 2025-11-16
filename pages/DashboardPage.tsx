@@ -1,4 +1,3 @@
-// FIX: Import useState and useEffect from React to resolve multiple "Cannot find name" errors.
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';

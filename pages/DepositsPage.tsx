@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-// FIX: Import `updateDoc` to resolve 'Cannot find name' error.
 import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';

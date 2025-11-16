@@ -6,6 +6,7 @@ import Pagination from '../components/Pagination';
 import { WithdrawalIcon } from '../components/icons/WithdrawalIcon';
 import { DepositIcon } from '../components/icons/DepositIcon';
 import { TasksIcon } from '../components/icons/TasksIcon';
+import { RevenueIcon } from '../components/icons/RevenueIcon';
 
 interface RevenueTransaction {
     id: string;
@@ -98,7 +99,7 @@ const RevenuePage: React.FC = () => {
         <div className="container mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Revenue Dashboard</h1>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Total Revenue" value={`Rs ${revenueStats.total.toFixed(2)}`} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} />
+                <StatCard title="Total Revenue" value={`Rs ${revenueStats.total.toFixed(2)}`} icon={<RevenueIcon className="w-6 h-6 text-indigo-500" />} />
                 <StatCard title="From Deposits" value={`Rs ${revenueStats.depositFees.toFixed(2)}`} icon={<DepositIcon className="w-6 h-6 text-indigo-500" />} />
                 <StatCard title="From Withdrawals" value={`Rs ${revenueStats.withdrawalFees.toFixed(2)}`} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} />
                 <StatCard title="From Tasks" value={`Rs ${(revenueStats.taskCommissions + revenueStats.listingFees).toFixed(2)}`} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} />
