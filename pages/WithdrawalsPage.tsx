@@ -64,11 +64,8 @@ const WithdrawalsPage: React.FC = () => {
     setLoading(true);
     setSelectedRequests(new Set());
     
-    // THE FIX: Added orderBy('requestedAt', 'desc') to the query.
-    // This sorts requests on the server and is crucial for Firestore to correctly
-    // return results when combined with a 'where' filter. This was the cause of the issue.
-    // NOTE: Firestore may require an index. If so, an error will appear in the browser
-    // console with a link to create it automatically.
+    // Re-adding the orderBy clause now that the Firestore index is built.
+    // This provides efficient, server-side sorting.
     const q = query(
         collection(db, 'withdrawal_requests'), 
         where('status', '==', filter),
