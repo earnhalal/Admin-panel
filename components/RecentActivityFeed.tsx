@@ -33,14 +33,30 @@ const RecentActivityFeed: React.FC = () => {
             onSnapshot(q, (snapshot) => {
                 const newActivities = snapshot.docs.map(doc => {
                     const data = doc.data();
+                    let timestamp: Date;
+                    const dateSource = type === 'users' ? data.createdAt : data.requestedAt;
+
+                    if (dateSource && typeof dateSource.toDate === 'function') {
+                        timestamp = (dateSource as Timestamp).toDate();
+                    } else if (dateSource) {
+                        timestamp = new Date(dateSource);
+                        if (isNaN(timestamp.getTime())) {
+                            console.warn(`Invalid date format for doc ${doc.id} in RecentActivityFeed`);
+                            timestamp = new Date(0); // Fallback
+                        }
+                    } else {
+                        console.warn(`Missing date field for doc ${doc.id} in RecentActivityFeed`);
+                        timestamp = new Date(0); // Fallback
+                    }
+
                     if (type === 'users') {
-                        return { id: doc.id, type: 'user', text: `${data.email} just signed up.`, timestamp: (data.createdAt as Timestamp).toDate() };
+                        return { id: doc.id, type: 'user', text: `${data.email} just signed up.`, timestamp };
                     }
                     if (type === 'withdrawals') {
-                        return { id: doc.id, type: 'withdrawal', text: `New withdrawal request for Rs ${data.amount}.`, timestamp: (data.requestedAt as Timestamp).toDate() };
+                        return { id: doc.id, type: 'withdrawal', text: `New withdrawal request for Rs ${data.amount}.`, timestamp };
                     }
                     // deposits
-                    return { id: doc.id, type: 'deposit', text: `New deposit request for Rs ${data.amount}.`, timestamp: (data.requestedAt as Timestamp).toDate() };
+                    return { id: doc.id, type: 'deposit', text: `New deposit request for Rs ${data.amount}.`, timestamp };
                 }) as ActivityItem[];
 
                 setActivities(prev => {
@@ -70,6 +86,7 @@ const RecentActivityFeed: React.FC = () => {
         if (interval > 1) return Math.floor(interval) + " hours ago";
         interval = seconds / 60;
         if (interval > 1) return Math.floor(interval) + " minutes ago";
+        if (seconds < 5) return "just now";
         return Math.floor(seconds) + " seconds ago";
     }
 

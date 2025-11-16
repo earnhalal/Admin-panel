@@ -64,17 +64,52 @@ const WithdrawalsPage: React.FC = () => {
     setLoading(true);
     setSelectedRequests(new Set());
     const q = query(collection(db, 'withdrawal_requests'), where('status', '==', filter));
+    
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-        const requests = snapshot.docs.map(doc => {
-          const data = doc.data();
-          const requestedAtDate = data.requestedAt ? (data.requestedAt as Timestamp).toDate() : new Date(0); // Fallback date
-          return { id: doc.id, ...data, requestedAt: requestedAtDate } as WithdrawalRequest
+        const processedRequests: WithdrawalRequest[] = [];
+        
+        snapshot.docs.forEach(doc => {
+            try {
+                const data = doc.data();
+                let requestedAtDate: Date;
+
+                // Robustly handle 'requestedAt' field to prevent crashes
+                if (data.requestedAt && typeof data.requestedAt.toDate === 'function') {
+                    requestedAtDate = (data.requestedAt as Timestamp).toDate();
+                } else if (data.requestedAt) {
+                    requestedAtDate = new Date(data.requestedAt);
+                    if (isNaN(requestedAtDate.getTime())) {
+                        console.warn(`Invalid date format for 'requestedAt' in doc ${doc.id}:`, data.requestedAt);
+                        requestedAtDate = new Date(0); // Fallback to epoch
+                    }
+                } else {
+                    console.warn(`Missing 'requestedAt' field in doc ${doc.id}`);
+                    requestedAtDate = new Date(0); // Fallback to epoch
+                }
+                
+                processedRequests.push({ 
+                    ...data,
+                    id: doc.id, 
+                    requestedAt: requestedAtDate 
+                } as WithdrawalRequest);
+
+            } catch (error) {
+                console.error(`Failed to process withdrawal document ${doc.id}:`, error);
+                // This ensures one bad document doesn't stop others from rendering
+            }
         });
-        const enrichedRequests = await Promise.all(requests.map(async req => {
-            const userRef = doc(db, 'users', req.userId);
-            const userSnap = await getDoc(userRef);
-            return userSnap.exists() ? { ...req, userEmail: (userSnap.data() as User).email } : { ...req, userEmail: 'Unknown User' };
+
+        const enrichedRequests = await Promise.all(processedRequests.map(async req => {
+            try {
+                const userRef = doc(db, 'users', req.userId);
+                const userSnap = await getDoc(userRef);
+                return userSnap.exists() ? { ...req, userEmail: (userSnap.data() as User).email } : { ...req, userEmail: 'Unknown User' };
+            } catch (error) {
+                 console.error(`Failed to enrich request ${req.id} with user data:`, error);
+                 return { ...req, userEmail: 'Error fetching user' };
+            }
         }));
+
         setWithdrawals(enrichedRequests);
         setLoading(false);
     }, (error) => {

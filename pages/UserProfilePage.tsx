@@ -13,7 +13,7 @@ interface Transaction {
     type: 'Deposit' | 'Withdrawal';
     amount: number;
     status: string;
-    requestedAt: Timestamp;
+    requestedAt: Date;
 }
 
 interface UserTaskSubmission {
@@ -50,13 +50,35 @@ const UserProfilePage: React.FC = () => {
             const depositsQuery = query(collection(db, 'depositRequests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
             const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('userId', '==', userId), orderBy('requestedAt', 'desc'));
             
+            const processTransactions = (snapshot: any, type: 'Deposit' | 'Withdrawal'): Transaction[] => {
+                return snapshot.docs.map((d: any) => {
+                    const data = d.data();
+                    let date: Date;
+                    if (data.requestedAt && typeof data.requestedAt.toDate === 'function') {
+                        date = data.requestedAt.toDate();
+                    } else if (data.requestedAt) {
+                        date = new Date(data.requestedAt);
+                        if (isNaN(date.getTime())) date = new Date(0); // Invalid date fallback
+                    } else {
+                        date = new Date(0); // Missing date fallback
+                    }
+                    return {
+                        ...data,
+                        id: d.id,
+                        type,
+                        requestedAt: date,
+                    } as Transaction;
+                });
+            };
+
             const [depositsSnap, withdrawalsSnap] = await Promise.all([getDocs(depositsQuery), getDocs(withdrawalsQuery)]);
 
-            const userTransactions: Transaction[] = [];
-            depositsSnap.forEach(d => userTransactions.push({ id: d.id, type: 'Deposit', ...(d.data() as any) }));
-            withdrawalsSnap.forEach(d => userTransactions.push({ id: d.id, type: 'Withdrawal', ...(d.data() as any) }));
+            const userTransactions: Transaction[] = [
+                ...processTransactions(depositsSnap, 'Deposit'),
+                ...processTransactions(withdrawalsSnap, 'Withdrawal'),
+            ];
             
-            userTransactions.sort((a, b) => b.requestedAt.toMillis() - a.requestedAt.toMillis());
+            userTransactions.sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
             setTransactions(userTransactions);
 
             // Fetch Task Submissions
@@ -162,7 +184,7 @@ const UserProfilePage: React.FC = () => {
                                 <li key={tx.id} className="py-3 flex justify-between items-center">
                                     <div>
                                         <p className={`font-semibold ${tx.type === 'Deposit' ? 'text-green-600' : 'text-red-500'}`}>{tx.type}</p>
-                                        <p className="text-xs text-gray-500">{tx.requestedAt.toDate().toLocaleString()}</p>
+                                        <p className="text-xs text-gray-500">{tx.requestedAt.toLocaleString()}</p>
                                     </div>
                                     <div className="text-right">
                                         <p className="font-bold">Rs {tx.amount.toFixed(2)}</p>
