@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch, updateDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
@@ -16,27 +16,18 @@ interface WithdrawalRequest {
   id: string;
   userId: string;
   amount: number;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-  requestedAt: Date;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'Pending' | 'Approved' | 'Rejected';
+  createdAt: Timestamp;
   userEmail?: string;
+  username?: string;
   transactionId?: string;
-  method: string;
-  accountName: string;
-  accountNumber: string;
-  bankName?: string;
+  withdrawalDetails: {
+    method: string;
+    accountName: string;
+    accountNumber: string;
+    bankName?: string;
+  };
   rejectionReason?: string;
-}
-
-interface RejectionPayload {
-    id: string;
-    userId: string;
-    amount: number;
-}
-
-interface ApprovalPayload {
-    id: string;
-    userId: string;
-    amount: number;
 }
 
 type SortConfig = { key: keyof WithdrawalRequest; direction: 'ascending' | 'descending' } | null;
@@ -49,27 +40,27 @@ const WithdrawalsPage: React.FC = () => {
   const { addToast } = useToast();
   
   // New state for advanced features
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'requestedAt', direction: 'descending' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
   const ITEMS_PER_PAGE = 10;
   
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
-  const [rejectionPayload, setRejectionPayload] = useState<RejectionPayload | null>(null);
+  const [rejectionPayload, setRejectionPayload] = useState<WithdrawalRequest | null>(null);
   
   const [isTxnModalOpen, setIsTxnModalOpen] = useState(false);
-  const [approvalPayload, setApprovalPayload] = useState<ApprovalPayload | null>(null);
+  const [approvalPayload, setApprovalPayload] = useState<WithdrawalRequest | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setSelectedRequests(new Set());
     
-    // Re-adding the orderBy clause now that the Firestore index is built.
-    // This provides efficient, server-side sorting.
+    // Capitalize the filter status to match the database value (e.g., "Pending").
+    const queryStatus = filter.charAt(0).toUpperCase() + filter.slice(1);
+    
     const q = query(
         collection(db, 'withdrawal_requests'), 
-        where('status', '==', filter),
-        orderBy('requestedAt', 'desc')
+        where('status', '==', queryStatus) // Use the capitalized status for the query.
     );
     
     const unsubscribe = onSnapshot(q, async (snapshot) => {
@@ -78,26 +69,16 @@ const WithdrawalsPage: React.FC = () => {
         snapshot.docs.forEach(doc => {
             try {
                 const data = doc.data();
-                let requestedAtDate: Date;
 
-                // Robustly handle 'requestedAt' field to prevent crashes
-                if (data.requestedAt && typeof data.requestedAt.toDate === 'function') {
-                    requestedAtDate = (data.requestedAt as Timestamp).toDate();
-                } else if (data.requestedAt) {
-                    requestedAtDate = new Date(data.requestedAt);
-                    if (isNaN(requestedAtDate.getTime())) {
-                        console.warn(`Invalid date format for 'requestedAt' in doc ${doc.id}:`, data.requestedAt);
-                        requestedAtDate = new Date(0); // Fallback to epoch
-                    }
-                } else {
-                    console.warn(`Missing 'requestedAt' field in doc ${doc.id}`);
-                    requestedAtDate = new Date(0); // Fallback to epoch
+                // Ensure createdAt field exists and is a valid Timestamp
+                if (!data.createdAt || typeof data.createdAt.toDate !== 'function') {
+                    console.warn(`Missing or invalid 'createdAt' timestamp in doc ${doc.id}`);
+                    data.createdAt = Timestamp.fromDate(new Date(0)); // Fallback to epoch
                 }
                 
                 processedRequests.push({ 
                     ...data,
                     id: doc.id, 
-                    requestedAt: requestedAtDate 
                 } as WithdrawalRequest);
 
             } catch (error) {
@@ -110,10 +91,14 @@ const WithdrawalsPage: React.FC = () => {
             try {
                 const userRef = doc(db, 'users', req.userId);
                 const userSnap = await getDoc(userRef);
-                return userSnap.exists() ? { ...req, userEmail: (userSnap.data() as User).email } : { ...req, userEmail: 'Unknown User' };
+                if (userSnap.exists()) {
+                    const userData = userSnap.data() as User;
+                    return { ...req, userEmail: userData.email, username: userData.username };
+                }
+                return { ...req, userEmail: 'Unknown User', username: 'N/A' };
             } catch (error) {
                  console.error(`Failed to enrich request ${req.id} with user data:`, error);
-                 return { ...req, userEmail: 'Error fetching user' };
+                 return { ...req, userEmail: 'Error fetching user', username: 'Error' };
             }
         }));
 
@@ -131,8 +116,15 @@ const WithdrawalsPage: React.FC = () => {
     let sortableItems = [...withdrawals];
     if (sortConfig !== null) {
       sortableItems.sort((a, b) => {
-        const aValue = a[sortConfig.key];
-        const bValue = b[sortConfig.key];
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+
+        // Handle Firestore Timestamps for sorting
+        if (aValue instanceof Timestamp && bValue instanceof Timestamp) {
+            aValue = aValue.toMillis();
+            bValue = bValue.toMillis();
+        }
+
         if (aValue === undefined || aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
         if (bValue === undefined || aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
         return 0;
@@ -172,8 +164,8 @@ const WithdrawalsPage: React.FC = () => {
   };
 
 
-  const openApprovalModal = (id: string, userId: string, amount: number) => {
-    setApprovalPayload({ id, userId, amount });
+  const openApprovalModal = (request: WithdrawalRequest) => {
+    setApprovalPayload(request);
     setIsTxnModalOpen(true);
   };
   
@@ -192,6 +184,9 @@ const WithdrawalsPage: React.FC = () => {
           
           const withdrawalRef = doc(db, 'withdrawal_requests', id);
           const userRef = doc(db, 'users', userId);
+          // CRITICAL: Define reference to the user's personal transaction history record
+          const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
+          
           const userDoc = await transaction.get(userRef);
           
           if (!userDoc.exists()) throw new Error("User not found.");
@@ -199,9 +194,25 @@ const WithdrawalsPage: React.FC = () => {
           
           const newBalance = userDoc.data().balance - amount;
           
+          // 1. Update user balance
           transaction.update(userRef, { balance: newBalance });
-          transaction.update(withdrawalRef, { status: 'approved', transactionId: enteredTransactionId });
 
+          // 2. Update main withdrawal request
+          transaction.update(withdrawalRef, { status: 'Approved', transactionId: enteredTransactionId });
+
+          // 3. CRITICAL: Update the user's personal transaction history for their app to see
+          const { createdAt, withdrawalDetails } = approvalPayload;
+          const userTransactionData = {
+              amount,
+              createdAt,
+              withdrawalDetails,
+              status: 'Approved',
+              transactionId: enteredTransactionId,
+              type: 'Withdrawal',
+          };
+          transaction.set(userTransactionRef, userTransactionData, { merge: true });
+
+          // 4. Record revenue from the fee, if any
           if (feeAmount > 0) {
               const revenueRef = collection(db, 'revenueTransactions');
               transaction.set(doc(revenueRef), {
@@ -226,8 +237,8 @@ const WithdrawalsPage: React.FC = () => {
     }
   };
   
-  const openRejectModal = (payload: RejectionPayload) => {
-    setRejectionPayload(payload);
+  const openRejectModal = (request: WithdrawalRequest) => {
+    setRejectionPayload(request);
     setIsRejectModalOpen(true);
   };
 
@@ -239,20 +250,38 @@ const WithdrawalsPage: React.FC = () => {
     try {
         await runTransaction(db, async (transaction) => {
             const withdrawalRef = doc(db, 'withdrawal_requests', id);
+            // CRITICAL: Define reference to the user's personal transaction history record
+            const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
             const userRef = doc(db, 'users', userId);
+
             const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw new Error("User not found.");
+            if (!userDoc.exists()) {
+                throw new Error("User not found to return funds to.");
+            }
             
-            // This logic assumes balance was deducted on request. If not, no need to add back.
-            // Let's assume balance is only deducted on approval for consistency.
-            // const newBalance = userDoc.data().balance + amount;
-            // transaction.update(userRef, { balance: newBalance });
-            
-            transaction.update(withdrawalRef, { status: 'rejected', rejectionReason: reason });
+            // 1. Return funds to user's balance
+            const newBalance = userDoc.data().balance + amount;
+            transaction.update(userRef, { balance: newBalance });
+
+            // 2. Update main withdrawal request
+            transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: reason });
+
+            // 3. CRITICAL: Update user's personal transaction history for their app to see
+            const { createdAt, withdrawalDetails } = rejectionPayload;
+            const userTransactionData = {
+                amount,
+                createdAt,
+                withdrawalDetails,
+                status: 'Rejected',
+                rejectionReason: reason,
+                type: 'Withdrawal',
+            };
+            transaction.set(userTransactionRef, userTransactionData, { merge: true });
         });
-        addToast('Withdrawal rejected.', 'success');
+        addToast('Withdrawal rejected and funds returned.', 'success');
     } catch (error) {
-        addToast(`Failed to reject withdrawal.`, 'error');
+        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Failed to reject withdrawal: ${message}`, 'error');
     } finally {
         setActionLoading(prev => ({...prev, [id]: false}));
         setIsRejectModalOpen(false);
@@ -261,28 +290,59 @@ const WithdrawalsPage: React.FC = () => {
   };
   
   const handleBulkReject = async () => {
-      if (selectedRequests.size === 0) return;
-      setActionLoading(prev => ({ ...prev, bulkReject: true }));
-      
-      const batch = writeBatch(db);
-      selectedRequests.forEach(reqId => {
-          const request = withdrawals.find(w => w.id === reqId);
-          if (request) {
-              const withdrawalRef = doc(db, 'withdrawal_requests', reqId);
-              batch.update(withdrawalRef, { status: 'rejected', rejectionReason: 'Bulk rejected by admin.' });
-          }
-      });
+    if (selectedRequests.size === 0) return;
+    setActionLoading(prev => ({ ...prev, bulkReject: true }));
 
-      try {
-        await batch.commit();
-        addToast(`${selectedRequests.size} requests rejected.`, 'success');
+    const rejectionReason = 'Bulk rejected by admin.';
+    const promises: Promise<void>[] = [];
+
+    for (const reqId of selectedRequests) {
+        const request = withdrawals.find(w => w.id === reqId);
+        if (request) {
+            const promise = runTransaction(db, async (transaction) => {
+                const { id, userId, amount } = request;
+                const withdrawalRef = doc(db, 'withdrawal_requests', id);
+                const userRef = doc(db, 'users', userId);
+                const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
+
+                const userDoc = await transaction.get(userRef);
+                if (!userDoc.exists()) {
+                    console.error(`User ${userId} not found for bulk rejection of ${id}`);
+                    return; 
+                }
+
+                // 1. Return funds
+                const newBalance = userDoc.data().balance + amount;
+                transaction.update(userRef, { balance: newBalance });
+
+                // 2. Update main request
+                transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason });
+
+                // 3. CRITICAL: Update user's personal transaction history
+                const { createdAt, withdrawalDetails } = request;
+                const userTransactionData = {
+                    amount, createdAt, withdrawalDetails, status: 'Rejected', rejectionReason, type: 'Withdrawal',
+                };
+                transaction.set(userTransactionRef, userTransactionData, { merge: true });
+            }).catch(err => {
+                console.error(`Failed to reject request ${reqId} in bulk:`, err);
+                throw new Error(`Failed to process request ${reqId}`);
+            });
+            promises.push(promise);
+        }
+    }
+
+    try {
+        await Promise.all(promises);
+        addToast(`${selectedRequests.size} requests rejected and funds returned.`, 'success');
         setSelectedRequests(new Set());
-      } catch (error) {
-          addToast('Bulk rejection failed.', 'error');
-      } finally {
-          setActionLoading(prev => ({ ...prev, bulkReject: false }));
-      }
+    } catch (error) {
+        addToast('One or more requests failed during bulk rejection.', 'error');
+    } finally {
+        setActionLoading(prev => ({ ...prev, bulkReject: false }));
+    }
   };
+
 
   return (
     <div className="container mx-auto">
@@ -331,9 +391,9 @@ const WithdrawalsPage: React.FC = () => {
                             />
                             </th>
                         )}
-                        <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User & Details</th>
+                        <th className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User & Details</th>
                         <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                        <th onClick={() => requestSort('requestedAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
+                        <th onClick={() => requestSort('createdAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
                         {filter !== 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Details</th>}
                         {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
                         </tr>
@@ -343,13 +403,15 @@ const WithdrawalsPage: React.FC = () => {
                         <tr key={req.id}>
                             {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                <p className="font-semibold">{req.userEmail}</p>
-                                <p className="text-xs text-gray-500">{req.method}: {req.accountNumber}</p>
+                                <p className="font-semibold">{req.username || 'N/A'}</p>
+                                <p className="text-xs text-gray-500">{req.userEmail || 'N/A'}</p>
+                                <p className="text-xs text-gray-500 mt-1">{req.withdrawalDetails?.method || 'N/A'}: {req.withdrawalDetails?.accountNumber || 'N/A'}</p>
+                                <p className="text-xs text-gray-500">{req.withdrawalDetails?.accountName || 'N/A'} {req.withdrawalDetails?.bankName ? `(${req.withdrawalDetails.bankName})` : ''}</p>
                             </td>
                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>Rs {req.amount.toFixed(2)}</p></td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>{req.requestedAt.toLocaleString()}</p></td>
+                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>{req.createdAt.toDate().getTime() === 0 ? 'Date unavailable' : req.createdAt.toDate().toLocaleString()}</p></td>
                             {filter !== 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="break-all">{req.transactionId || 'N/A'}</p>{req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}</td>}
-                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
+                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal(req)} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
                         </tr>
                         ))}
                     </tbody>
@@ -365,16 +427,17 @@ const WithdrawalsPage: React.FC = () => {
                         <div className="flex justify-between items-start">
                              <div>
                                 <p className="font-bold text-lg text-gray-900 dark:text-white">Rs {req.amount.toFixed(2)}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail}</p>
+                                <p className="font-semibold text-sm text-gray-700 dark:text-gray-300">{req.username || 'N/A'}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail || 'N/A'}</p>
                             </div>
                             {filter === 'pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
                         </div>
                         <div className="mt-4 text-sm space-y-1">
-                            <p><span className="font-semibold">Method:</span> {req.method}</p>
-                            <p><span className="font-semibold">Account:</span> {req.accountNumber}</p>
-                            <p><span className="font-semibold">Name:</span> {req.accountName}</p>
-                            {req.bankName && <p><span className="font-semibold">Bank:</span> {req.bankName}</p>}
-                            <p className="text-xs text-gray-400 pt-1">{req.requestedAt.toLocaleString()}</p>
+                            <p><span className="font-semibold">Method:</span> {req.withdrawalDetails?.method || 'N/A'}</p>
+                            <p><span className="font-semibold">Account:</span> {req.withdrawalDetails?.accountNumber || 'N/A'}</p>
+                            <p><span className="font-semibold">Name:</span> {req.withdrawalDetails?.accountName || 'N/A'}</p>
+                            {req.withdrawalDetails?.bankName && <p><span className="font-semibold">Bank:</span> {req.withdrawalDetails.bankName}</p>}
+                            <p className="text-xs text-gray-400 pt-1">{req.createdAt.toDate().getTime() === 0 ? 'Date unavailable' : req.createdAt.toDate().toLocaleString()}</p>
                         </div>
                          {filter !== 'pending' && (
                             <div className="mt-2 text-sm">
@@ -384,8 +447,8 @@ const WithdrawalsPage: React.FC = () => {
                          )}
                         {filter === 'pending' && (
                             <div className="mt-4 flex justify-end gap-2">
-                                <button onClick={() => openApprovalModal(req.id, req.userId, req.amount)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
-                                <button onClick={() => openRejectModal({id: req.id, userId: req.userId, amount: req.amount})} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
+                                <button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
+                                <button onClick={() => openRejectModal(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
                             </div>
                         )}
                     </div>
