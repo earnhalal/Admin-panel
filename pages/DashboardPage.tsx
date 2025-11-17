@@ -34,11 +34,13 @@ const DashboardPage: React.FC = () => {
   const [allUsers, setAllUsers] = useState<{ createdAt: Timestamp }[]>([]);
   const [pendingWithdrawals, setPendingWithdrawals] = useState<number | null>(null);
   const [pendingSubmissions, setPendingSubmissions] = useState<number | null>(null);
+  const [pendingTaskRequests, setPendingTaskRequests] = useState<number | null>(null);
   const [totalBalance, setTotalBalance] = useState<number | null>(null);
   
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingWithdrawals, setLoadingWithdrawals] = useState(true);
   const [loadingSubmissions, setLoadingSubmissions] = useState(true);
+  const [loadingTaskRequests, setLoadingTaskRequests] = useState(true);
   const [loadingBalance, setLoadingBalance] = useState(true);
 
   const [aiReport, setAiReport] = useState<string | null>(null);
@@ -79,12 +81,29 @@ const DashboardPage: React.FC = () => {
         setLoadingSubmissions(false);
     });
 
+    const requestsQuery = query(collection(db, 'tasks'), where('status', '==', 'pending'));
+    const unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
+        setPendingTaskRequests(snapshot.size);
+        setLoadingTaskRequests(false);
+    }, (error) => {
+        console.error("Error fetching pending task requests:", error);
+        setLoadingTaskRequests(false);
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeWithdrawals();
       unsubscribeSubmissions();
+      unsubscribeRequests();
     };
   }, []);
+
+  const totalPendingTasks = useMemo(() => {
+    const requests = pendingTaskRequests ?? 0;
+    const submissions = pendingSubmissions ?? 0;
+    if (loadingTaskRequests || loadingSubmissions) return null;
+    return requests + submissions;
+  }, [pendingTaskRequests, pendingSubmissions, loadingTaskRequests, loadingSubmissions]);
 
   const chartData = useMemo(() => {
     const data: { [key: string]: number } = {};
@@ -126,7 +145,7 @@ const DashboardPage: React.FC = () => {
             userCount,
             totalBalance,
             pendingWithdrawals,
-            pendingSubmissions
+            pendingSubmissions: totalPendingTasks,
         };
         const report = await generateSmartReport(stats);
         setAiReport(report);
@@ -149,7 +168,7 @@ const DashboardPage: React.FC = () => {
         <StatCard title="Total Users" value={userCount} icon={<UsersIcon className="w-6 h-6 text-indigo-500" />} loading={loadingUsers} />
         <StatCard title="Total User Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<WalletIcon className="w-6 h-6 text-indigo-500" />} loading={loadingBalance} />
         <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} loading={loadingWithdrawals} />
-        <StatCard title="Pending Task Submissions" value={pendingSubmissions} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions} />
+        <StatCard title="Pending Task Reviews" value={totalPendingTasks} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions || loadingTaskRequests} />
       </div>
 
        <div className="mt-8 grid grid-cols-1 xl:grid-cols-3 gap-8">

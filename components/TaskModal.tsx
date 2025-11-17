@@ -29,7 +29,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave, isLoading 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [reward, setReward] = useState(0);
-  const [status, setStatus] = useState<'active' | 'inactive'>('active');
+  const [status, setStatus] = useState<'approved' | 'inactive'>('approved');
   const [taskType, setTaskType] = useState<TaskType | null>(null);
   const [taskUrl, setTaskUrl] = useState('');
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
@@ -39,14 +39,15 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave, isLoading 
       setTitle(task.title);
       setDescription(task.description);
       setReward(task.reward);
-      setStatus(task.status as 'active' | 'inactive');
+      // Handle backward compatibility: 'active' status is treated as 'approved'
+      setStatus((task.status === 'active' || task.status === 'approved') ? 'approved' : 'inactive');
       setTaskType(task.taskType || null);
       setTaskUrl(task.taskUrl || '');
     } else {
       setTitle('');
       setDescription('');
       setReward(0);
-      setStatus('active');
+      setStatus('approved');
       setTaskType(null);
       setTaskUrl('');
     }
@@ -143,10 +144,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ task, onClose, onSave, isLoading 
               <select
                 id="status"
                 value={status}
-                onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
+                onChange={(e) => setStatus(e.target.value as 'approved' | 'inactive')}
                 className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 leading-tight focus:outline-none focus:shadow-outline"
               >
-                <option value="active">Active</option>
+                <option value="approved">Approved (Live)</option>
                 <option value="inactive">Inactive</option>
               </select>
             </div>

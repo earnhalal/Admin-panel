@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, runTransaction, getDoc, where, query, writeBatch, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, runTransaction, getDoc, where, query, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import TaskModal from '../components/TaskModal';
 import AiTaskModal from '../components/AiTaskModal';
@@ -17,6 +17,7 @@ import { InstagramIcon } from '../components/icons/InstagramIcon';
 import { FacebookIcon } from '../components/icons/FacebookIcon';
 import { GlobeIcon } from '../components/icons/GlobeIcon';
 import { LinkIcon } from '../components/icons/LinkIcon';
+import RejectionModal from '../components/RejectionModal';
 
 
 export type TaskType = 'youtube' | 'instagram' | 'facebook' | 'website' | 'other';
@@ -26,11 +27,14 @@ export interface Task {
   title: string;
   description: string;
   reward: number;
-  status: 'active' | 'inactive' | 'pending_approval';
+  status: 'approved' | 'active' | 'inactive' | 'pending' | 'rejected'; // 'active' for backward compatibility
   createdBy?: string;
   userEmail?: string;
   taskType?: TaskType;
   taskUrl?: string;
+  rejectionReason?: string;
+  createdAt?: Timestamp;
+  submittedAt?: Timestamp; // For user-submitted tasks
 }
 
 export interface UserTask {
@@ -55,7 +59,8 @@ const TasksPage: React.FC = () => {
   const [managedTasks, setManagedTasks] = useState<Task[]>([]);
   const [taskRequests, setTaskRequests] = useState<Task[]>([]);
   const [submissions, setSubmissions] = useState<UserTask[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [loadingManaged, setLoadingManaged] = useState(true);
   const [loadingSubmissions, setLoadingSubmissions] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -66,47 +71,104 @@ const TasksPage: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
-  const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<string | null>(null);
+
+  const [taskListingFee, setTaskListingFee] = useState(0);
 
   // Pagination and sorting state
   const [currentSubmissionsPage, setCurrentSubmissionsPage] = useState(1);
   const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set());
   const ITEMS_PER_PAGE = 10;
 
+  const formatDate = (timestamp: Timestamp | undefined) => {
+    if (!timestamp) return 'N/A';
+    return timestamp.toDate().toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+    });
+  };
 
   useEffect(() => {
-    // ... (existing useEffect for tasks and submissions)
-    const unsubscribeTasks = onSnapshot(collection(db, 'tasks'), async (snapshot) => {
-      const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
-      
-      const requests = [];
-      const managed = [];
-
-      for (const task of tasksData) {
-        if (task.status === 'pending_approval') {
-          if (task.createdBy && !task.userEmail) {
-            const userRef = doc(db, 'users', task.createdBy);
-            const userSnap = await getDoc(userRef);
-            task.userEmail = userSnap.exists() ? (userSnap.data() as User).email : 'Unknown User';
-          }
-          requests.push(task);
-        } else if (task.status === 'active' || task.status === 'inactive') {
-          managed.push(task);
+    const settingsRef = doc(db, 'settings', 'global');
+    const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
+        if (docSnap.exists()) {
+            setTaskListingFee(docSnap.data().taskListingFee || 0);
         }
+    });
+    return () => unsubscribeSettings();
+  }, []);
+
+
+  useEffect(() => {
+    // Listener for Task Requests (pending)
+    const requestsQuery = query(collection(db, 'tasks'), where('status', '==', 'pending'));
+    const unsubscribeRequests = onSnapshot(requestsQuery, async (snapshot) => {
+      setLoadingRequests(true); // Reset loading state on new snapshot
+      try {
+        const requestsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
+        
+        const enrichedRequests = await Promise.all(requestsData.map(async (task) => {
+          if (task.createdBy && !task.userEmail) {
+            try {
+              const userRef = doc(db, 'users', task.createdBy);
+              const userSnap = await getDoc(userRef);
+              task.userEmail = userSnap.exists() ? (userSnap.data() as User).email : 'Unknown User';
+            } catch (enrichError) {
+               console.error(`Failed to fetch user email for task ${task.id}:`, enrichError);
+               task.userEmail = 'Error fetching user';
+            }
+          }
+          return task;
+        }));
+
+        // Sort client-side for robustness, prioritizing submittedAt
+        enrichedRequests.sort((a, b) => {
+            const timeA = a.submittedAt?.toMillis() || a.createdAt?.toMillis() || 0;
+            const timeB = b.submittedAt?.toMillis() || b.createdAt?.toMillis() || 0;
+            return timeB - timeA; // Descending order
+        });
+
+        setTaskRequests(enrichedRequests);
+      } catch (processingError) {
+        console.error("Error processing task request data:", processingError);
+        addToast('Error processing task requests.', 'error');
+      } finally {
+        setLoadingRequests(false);
       }
-      
-      setTaskRequests(requests);
-      setManagedTasks(managed);
-      setLoading(false);
     }, (error) => {
-      console.error("Error fetching tasks:", error);
-      addToast('Error fetching tasks.', 'error');
-      setLoading(false);
+      console.error("Error fetching task requests:", error);
+      addToast('Error fetching task requests.', 'error');
+      setLoadingRequests(false);
     });
 
+
+    // Listener for Managed Tasks (approved/active/inactive/rejected)
+    const managedQuery = query(collection(db, 'tasks'), where('status', 'in', ['approved', 'active', 'inactive', 'rejected']));
+    const unsubscribeManaged = onSnapshot(managedQuery, (snapshot) => {
+      try {
+        const managedData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
+        setManagedTasks(managedData);
+      } catch (error) {
+        console.error("Error processing managed tasks:", error);
+        addToast('Error processing managed tasks.', 'error');
+      } finally {
+        setLoadingManaged(false);
+      }
+    }, (error) => {
+        console.error("Error fetching managed tasks:", error);
+        addToast('Error fetching managed tasks.', 'error');
+        setLoadingManaged(false);
+    });
+    
+    // Listener for Submissions
     const submissionsQuery = query(collection(db, 'userTasks'), where('status', '==', 'submitted'));
     const unsubscribeSubmissions = onSnapshot(submissionsQuery, async (snapshot) => {
+      try {
         const subsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserTask));
         
         const enrichedSubs = await Promise.all(subsData.map(async (sub) => {
@@ -121,9 +183,13 @@ const TasksPage: React.FC = () => {
                 taskReward: taskSnap.exists() ? (taskSnap.data() as Task).reward : 0,
             };
         }));
-
         setSubmissions(enrichedSubs);
+      } catch (error) {
+          console.error("Error processing submissions:", error);
+          addToast('Error fetching submissions.', 'error');
+      } finally {
         setLoadingSubmissions(false);
+      }
     }, (error) => {
       console.error("Error fetching submissions:", error);
       addToast('Error fetching submissions.', 'error');
@@ -131,15 +197,23 @@ const TasksPage: React.FC = () => {
     });
 
     return () => {
-        unsubscribeTasks();
+        unsubscribeRequests();
+        unsubscribeManaged();
         unsubscribeSubmissions();
     };
-  }, [addToast]);
+}, [addToast]);
 
   const paginatedSubmissions = useMemo(() => {
     const startIndex = (currentSubmissionsPage - 1) * ITEMS_PER_PAGE;
     return submissions.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   }, [submissions, currentSubmissionsPage]);
+  
+  const { liveTasks, taskHistory } = useMemo(() => {
+    const live = managedTasks.filter(t => t.status === 'approved' || t.status === 'active');
+    const history = managedTasks.filter(t => t.status === 'inactive' || t.status === 'rejected');
+    return { liveTasks: live, taskHistory: history };
+  }, [managedTasks]);
+
 
   // Handlers
   const handleOpenModal = (task: Task | null = null) => {
@@ -164,7 +238,7 @@ const TasksPage: React.FC = () => {
         } else {
             await addDoc(collection(db, 'tasks'), {
                 ...taskData,
-                status: taskData.status || 'active', // Default status for new tasks
+                status: taskData.status || 'approved', // Default status for new tasks
             });
             addToast("Task created successfully!", "success");
         }
@@ -197,7 +271,7 @@ const TasksPage: React.FC = () => {
     setActionLoading(prev => ({...prev, [`toggle_${task.id}`]: true}));
     try {
         const taskRef = doc(db, 'tasks', task.id);
-        const newStatus = task.status === 'active' ? 'inactive' : 'active';
+        const newStatus = (task.status === 'active' || task.status === 'approved') ? 'inactive' : 'approved';
         await updateDoc(taskRef, { status: newStatus });
         addToast(`Task status changed to ${newStatus}.`, "success");
     } catch (error) {
@@ -211,27 +285,28 @@ const TasksPage: React.FC = () => {
     setActionLoading(prev => ({...prev, [task.id]: true}));
     try {
         await runTransaction(db, async (transaction) => {
-            const settingsRef = doc(db, 'settings', 'global');
-            const settingsDoc = await transaction.get(settingsRef);
-            const listingFee = settingsDoc.exists() ? (settingsDoc.data().taskListingFee || 0) : 0;
+            const totalCost = task.reward + taskListingFee;
 
             if (!task.createdBy) throw new Error("Task creator not found.");
             
             const userRef = doc(db, 'users', task.createdBy);
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("Task creator not found.");
-            if (userDoc.data().balance < listingFee) throw new Error("Creator has insufficient balance for listing fee.");
 
-            const newBalance = userDoc.data().balance - listingFee;
+            if (userDoc.data().balance < totalCost) {
+                throw new Error("Creator has insufficient balance for reward + listing fee.");
+            }
+
+            const newBalance = userDoc.data().balance - totalCost;
             transaction.update(userRef, { balance: newBalance });
 
             const taskRef = doc(db, 'tasks', task.id);
-            transaction.update(taskRef, { status: 'active' });
+            transaction.update(taskRef, { status: 'approved' });
 
-            if (listingFee > 0) {
+            if (taskListingFee > 0) {
                 const revenueRef = collection(db, 'revenueTransactions');
                 transaction.set(doc(revenueRef), {
-                    adminFeeAmount: listingFee,
+                    adminFeeAmount: taskListingFee,
                     originalAmount: task.reward,
                     sourceUser: task.createdBy,
                     timestamp: Timestamp.now(),
@@ -240,7 +315,7 @@ const TasksPage: React.FC = () => {
                 });
             }
         });
-        addToast("Task request approved and listing fee charged.", "success");
+        addToast("Task request approved and funds deducted.", "success");
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";
         addToast(`Failed to approve task request: ${message}`, "error");
@@ -249,21 +324,25 @@ const TasksPage: React.FC = () => {
     }
   };
 
-  const openRejectConfirm = (id: string) => {
+  const openRejectModal = (id: string) => {
     setRequestToReject(id);
-    setIsRejectConfirmOpen(true);
+    setIsRejectModalOpen(true);
   };
-  const handleRejectRequest = async () => {
+  const handleRejectRequest = async (reason: string) => {
     if (!requestToReject) return;
     setActionLoading(prev => ({...prev, [requestToReject]: true}));
     try {
-        await deleteDoc(doc(db, 'tasks', requestToReject));
-        addToast("Task request rejected and deleted.", "success");
+        const taskRef = doc(db, 'tasks', requestToReject);
+        await updateDoc(taskRef, {
+            status: 'rejected',
+            rejectionReason: reason || 'Rejected by admin'
+        });
+        addToast("Task request rejected.", "success");
     } catch (error) {
         addToast("Failed to reject request.", "error");
     } finally {
         setActionLoading(prev => ({...prev, [requestToReject]: false}));
-        setIsRejectConfirmOpen(false);
+        setIsRejectModalOpen(false);
         setRequestToReject(null);
     }
   };
@@ -389,67 +468,99 @@ const TasksPage: React.FC = () => {
       </div>
       
       {/* User Task Requests section */}
-      {taskRequests.length > 0 && (
-        <div className="mb-12">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">User Task Requests</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">User Task Requests</h2>
+        {loadingRequests ? <p>Loading requests...</p> : taskRequests.length === 0 ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No pending task requests.</p> : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {taskRequests.map(task => (
-                    <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md">
-                        <h3 className="font-bold truncate">{task.title}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">By: {task.userEmail}</p>
-                        <p className="text-sm my-2 line-clamp-2">{task.description}</p>
-                        <div className="flex justify-between items-center mt-4">
-                            <span className="font-bold text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
-                            <div className="flex gap-2">
-                                <button onClick={() => handleApproveRequest(task)} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
-                                <button onClick={() => openRejectConfirm(task.id)} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
-                            </div>
+                    <div key={task.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-lg flex flex-col">
+                        <div className="p-6 flex-grow">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{task.userEmail || 'N/A'}</p>
+                            <h3 className="font-bold text-lg mb-2 text-gray-900 dark:text-white">{task.title}</h3>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
+                            <p className="text-xs text-gray-400 mt-2">Submitted: {formatDate(task.submittedAt || task.createdAt)}</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-slate-800/50 p-4 space-y-2 text-sm">
+                           <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
+                                <span>Task Reward</span>
+                                <span className="font-semibold">Rs {task.reward.toFixed(2)}</span>
+                           </div>
+                           <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
+                                <span>Listing Fee</span>
+                                <span className="font-semibold">Rs {taskListingFee.toFixed(2)}</span>
+                           </div>
+                           <div className="flex justify-between items-center font-bold text-gray-800 dark:text-white">
+                                <span>Total Cost to User</span>
+                                <span>Rs {(task.reward + taskListingFee).toFixed(2)}</span>
+                           </div>
+                        </div>
+                        <div className="p-4 flex gap-2">
+                             <button onClick={() => handleApproveRequest(task)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400">Approve</button>
+                             <button onClick={() => openRejectModal(task.id)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400">Reject</button>
                         </div>
                     </div>
                 ))}
             </div>
-        </div>
-      )}
-      
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Manage Live Tasks</h2>
-      {loading ? <p>Loading tasks...</p> : managedTasks.length === 0 ? <p className="text-gray-500 dark:text-gray-400">No active or inactive tasks found.</p> :
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {managedTasks.map(task => (
-                <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md flex flex-col">
-                    <div className="flex-grow">
-                        <div className="flex justify-between items-start">
-                             <h3 className="font-bold text-lg mb-1">{task.title}</h3>
-                             <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${task.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'}`}>{task.status}</span>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
-                         {task.taskUrl && (
-                            <a 
-                                href={task.taskUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-                            >
-                                {task.taskType && TASK_TYPE_ICONS[task.taskType]}
-                                View Task Link
-                            </a>
-                        )}
-                    </div>
-                    <div className="mt-4 flex justify-between items-center">
-                        <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
-                        <div className="flex gap-2">
-                            <button onClick={() => handleToggleStatus(task)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">{task.status === 'active' ? 'Pause' : 'Activate'}</button>
-                            <button onClick={() => handleOpenModal(task)} className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:underline">Edit</button>
-                            <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
-                        </div>
-                    </div>
-                </div>
-            ))}
-        </div>
-      }
+        )}
+      </div>
+
+      <div className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Live Tasks</h2>
+        {loadingManaged ? <p>Loading tasks...</p> : liveTasks.length === 0 ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No live tasks found.</p> :
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {liveTasks.map(task => (
+                  <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md flex flex-col">
+                      <div className="flex-grow">
+                          <div className="flex justify-between items-start">
+                              <h3 className="font-bold text-lg mb-1">{task.title}</h3>
+                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Live</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
+                      </div>
+                      <div className="mt-4 flex justify-between items-center">
+                          <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
+                          <div className="flex gap-2">
+                              <button onClick={() => handleToggleStatus(task)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Pause</button>
+                              <button onClick={() => handleOpenModal(task)} className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:underline">Edit</button>
+                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
+                          </div>
+                      </div>
+                  </div>
+              ))}
+          </div>
+        }
+      </div>
+
+      <div className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Task History (Inactive/Rejected)</h2>
+        {loadingManaged ? <p>Loading history...</p> : taskHistory.length === 0 ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No historical tasks found.</p> :
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {taskHistory.map(task => (
+                  <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md flex flex-col opacity-70">
+                      <div className="flex-grow">
+                          <div className="flex justify-between items-start">
+                              <h3 className="font-bold text-lg mb-1">{task.title}</h3>
+                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${task.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'}`}>{task.status}</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
+                          {task.rejectionReason && <p className="text-xs text-red-500 mt-2">Reason: {task.rejectionReason}</p>}
+                      </div>
+                      <div className="mt-4 flex justify-between items-center">
+                          <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
+                          <div className="flex gap-2">
+                              {task.status === 'inactive' && <button onClick={() => handleToggleStatus(task)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Activate</button>}
+                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
+                          </div>
+                      </div>
+                  </div>
+              ))}
+          </div>
+        }
+      </div>
+
 
       <div className="mt-12">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">Pending Task Submissions</h2>
-
         {selectedSubmissions.size > 0 && (
             <div className="mb-4 bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg flex items-center justify-between">
                 <span className="text-sm font-medium text-indigo-800 dark:text-indigo-200">{selectedSubmissions.size} submission(s) selected</span>
@@ -465,17 +576,12 @@ const TasksPage: React.FC = () => {
             ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No pending submissions.</p>
             : <>
                 <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden">
-                    {/* Desktop Table View */}
                     <div className="overflow-x-auto hidden md:block">
                         <table className="min-w-full leading-normal">
                             <thead>
                                 <tr>
                                     <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                                        <Checkbox
-                                            checked={selectedSubmissions.size === paginatedSubmissions.length && paginatedSubmissions.length > 0}
-                                            onChange={handleSelectAllSubmissions}
-                                            indeterminate={selectedSubmissions.size > 0 && selectedSubmissions.size < paginatedSubmissions.length}
-                                        />
+                                        <Checkbox checked={selectedSubmissions.size === paginatedSubmissions.length && paginatedSubmissions.length > 0} onChange={handleSelectAllSubmissions} indeterminate={selectedSubmissions.size > 0 && selectedSubmissions.size < paginatedSubmissions.length} />
                                     </th>
                                     <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
                                     <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Task</th>
@@ -485,64 +591,19 @@ const TasksPage: React.FC = () => {
                             <tbody>
                                 {paginatedSubmissions.map((sub) => (
                                     <tr key={sub.id}>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                            <Checkbox
-                                                checked={selectedSubmissions.has(sub.id)}
-                                                onChange={() => handleSelectSubmission(sub.id)}
-                                            />
-                                        </td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                            <p className="text-gray-900 dark:text-white whitespace-no-wrap">{sub.userEmail}</p>
-                                        </td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                            <p className="text-gray-900 dark:text-white whitespace-no-wrap">{sub.taskTitle}</p>
-                                            <p className="text-gray-600 dark:text-gray-400 whitespace-no-wrap">Reward: Rs {sub.taskReward?.toFixed(2)}</p>
-                                        </td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400 transition-colors">
-                                                    {actionLoading[sub.id] ? <Spinner /> : <CheckIcon className="w-4 h-4" />}
-                                                </button>
-                                                <button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400 transition-colors">
-                                                    {actionLoading[sub.id] ? <Spinner /> : <XIcon className="w-4 h-4" />}
-                                                </button>
-                                            </div>
-                                        </td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} /></td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="text-gray-900 dark:text-white whitespace-no-wrap">{sub.userEmail}</p></td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="text-gray-900 dark:text-white whitespace-no-wrap">{sub.taskTitle}</p><p className="text-gray-600 dark:text-gray-400 whitespace-no-wrap">Reward: Rs {sub.taskReward?.toFixed(2)}</p></td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400 transition-colors">{actionLoading[sub.id] ? <Spinner /> : <CheckIcon className="w-4 h-4" />}</button><button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400 transition-colors">{actionLoading[sub.id] ? <Spinner /> : <XIcon className="w-4 h-4" />}</button></div></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-
-                    {/* Mobile Card View */}
                     <div className="md:hidden">
-                        {paginatedSubmissions.map(sub => (
-                             <div key={sub.id} className="p-4 border-b border-gray-200 dark:border-slate-800 flex items-start gap-4">
-                                <Checkbox
-                                    checked={selectedSubmissions.has(sub.id)}
-                                    onChange={() => handleSelectSubmission(sub.id)}
-                                    className="mt-1"
-                                />
-                                <div className="flex-1">
-                                    <p className="font-semibold text-gray-900 dark:text-white">{sub.taskTitle}</p>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">from {sub.userEmail}</p>
-                                    <div className="mt-2 flex justify-between items-center">
-                                        <p className="font-bold text-indigo-600 dark:text-indigo-400">Rs {sub.taskReward?.toFixed(2)}</p>
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button>
-                                            <button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                        {paginatedSubmissions.map(sub => ( <div key={sub.id} className="p-4 border-b border-gray-200 dark:border-slate-800 flex items-start gap-4"><Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} className="mt-1" /><div className="flex-1"><p className="font-semibold text-gray-900 dark:text-white">{sub.taskTitle}</p><p className="text-sm text-gray-500 dark:text-gray-400">from {sub.userEmail}</p><div className="mt-2 flex justify-between items-center"><p className="font-bold text-indigo-600 dark:text-indigo-400">Rs {sub.taskReward?.toFixed(2)}</p><div className="flex items-center gap-2"><button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></div></div></div>))}
                     </div>
-                    
-                    <Pagination 
-                        currentPage={currentSubmissionsPage}
-                        totalPages={Math.ceil(submissions.length / ITEMS_PER_PAGE)}
-                        onPageChange={setCurrentSubmissionsPage}
-                    />
+                    <Pagination currentPage={currentSubmissionsPage} totalPages={Math.ceil(submissions.length / ITEMS_PER_PAGE)} onPageChange={setCurrentSubmissionsPage} />
                 </div>
             </>
         )}
@@ -551,7 +612,7 @@ const TasksPage: React.FC = () => {
       {isModalOpen && ( <TaskModal task={selectedTask} onClose={handleCloseModal} onSave={handleSaveTask} isLoading={actionLoading['create'] || actionLoading['update']} /> )}
       {isAiModalOpen && ( <AiTaskModal onClose={handleCloseModal} onSave={handleSaveTask} /> )}
       <ConfirmationModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDeleteTask} title="Delete Task" message="Are you sure you want to delete this task? This action cannot be undone." />
-      <ConfirmationModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={handleRejectRequest} title="Reject Task Request" message="Are you sure you want to reject this task request? It will be permanently deleted." />
+      <RejectionModal isOpen={isRejectModalOpen} onClose={() => setIsRejectModalOpen(false)} onConfirm={handleRejectRequest} title="Reject Task Request" isLoading={requestToReject ? actionLoading[requestToReject] : false} />
     </div>
   );
 };
