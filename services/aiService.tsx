@@ -1,5 +1,5 @@
 import { User } from '../pages/UsersPage';
-import { TaskType } from '../pages/TasksPage';
+import { Task, TaskType } from '../pages/TasksPage';
 
 // Using any because the type is from a dynamic import.
 // The AI client will be initialized on first use, not on module load.
@@ -269,5 +269,57 @@ export const runFraudDetection = async (users: User[]): Promise<SuspiciousUser[]
     } catch (error) {
         console.error("Error calling Gemini API for fraud detection:", error);
         throw new Error("Failed to run fraud detection scan. Please try again.");
+    }
+};
+
+export const decideTaskCreationRequest = async (task: Omit<Task, 'id' | 'status'>): Promise<{ decision: 'APPROVE' | 'REJECT', reason: string }> => {
+    try {
+        const prompt = `You are an AI moderator for a micro-task platform. Your job is to approve or reject new tasks submitted by users.
+        
+        Analyze the following task request and decide if it should be approved.
+
+        **Approval Criteria:**
+        1.  **Clarity:** The title and description must be clear, specific, and easy to understand.
+        2.  **Validity:** The task must be legitimate. Reject any tasks that seem like scams, spam, contain inappropriate content, ask for personal information, or are impossible to complete.
+        3.  **Reward Fairness:** The reward should be reasonable for the work required. For example, a simple "like and subscribe" task should not have a reward of over Rs 50. Reject tasks with absurdly high rewards for simple actions.
+
+        **Task Data:**
+        - Title: "${task.title}"
+        - Description: "${task.description}"
+        - Reward: Rs ${task.reward.toFixed(2)}
+
+        Respond in JSON format with a 'decision' ('APPROVE' or 'REJECT') and a brief 'reason' for your decision.`;
+        
+        const aiClient = await getAiClient();
+        const { Type } = genaiTypes;
+        const response = await aiClient.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        decision: { type: Type.STRING },
+                        reason: { type: Type.STRING }
+                    },
+                    required: ["decision", "reason"]
+                }
+            }
+        });
+
+        const jsonText = response.text.trim();
+        const parsed = JSON.parse(jsonText);
+        
+        if (parsed.decision === 'APPROVE' || parsed.decision === 'REJECT') {
+            return { decision: parsed.decision, reason: parsed.reason };
+        }
+        
+        console.warn("AI returned an invalid decision, defaulting to REJECT for safety:", response.text);
+        return { decision: 'REJECT', reason: 'AI analysis was inconclusive. Requires manual review.' };
+
+    } catch (error) {
+        console.error("Error calling Gemini API for task creation decision:", error);
+        return { decision: 'REJECT', reason: 'An error occurred during AI analysis. Requires manual review.' };
     }
 };

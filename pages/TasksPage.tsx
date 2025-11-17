@@ -18,6 +18,8 @@ import { FacebookIcon } from '../components/icons/FacebookIcon';
 import { GlobeIcon } from '../components/icons/GlobeIcon';
 import { LinkIcon } from '../components/icons/LinkIcon';
 import RejectionModal from '../components/RejectionModal';
+import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
+import { decideTaskCreationRequest } from '../services/aiService';
 
 
 export type TaskType = 'youtube' | 'instagram' | 'facebook' | 'website' | 'other';
@@ -80,6 +82,19 @@ const TasksPage: React.FC = () => {
   const [currentSubmissionsPage, setCurrentSubmissionsPage] = useState(1);
   const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set());
   const ITEMS_PER_PAGE = 10;
+  
+  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
+  
+  // New state for AI review
+  const [isAiReviewing, setIsAiReviewing] = useState(false);
+  const [aiReviewLogs, setAiReviewLogs] = useState<string[]>([]);
+  const [aiReviewStats, setAiReviewStats] = useState({ processed: 0, approved: 0, rejected: 0, failed: 0 });
+
+
+  const handleToggleExpand = (taskId: string) => {
+    setExpandedRequestId(prevId => (prevId === taskId ? null : taskId));
+  };
+
 
   const formatDate = (timestamp: Timestamp | undefined) => {
     if (!timestamp) return 'N/A';
@@ -319,6 +334,8 @@ const TasksPage: React.FC = () => {
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";
         addToast(`Failed to approve task request: ${message}`, "error");
+        // re-throw to be caught by AI handler
+        throw error;
     } finally {
         setActionLoading(prev => ({...prev, [task.id]: false}));
     }
@@ -445,6 +462,56 @@ const TasksPage: React.FC = () => {
       }
   };
 
+  const handleAiReviewRequests = async () => {
+    setIsAiReviewing(true);
+    setAiReviewLogs(['▶️ Starting AI review for pending task requests...']);
+    setAiReviewStats({ processed: 0, approved: 0, rejected: 0, failed: 0 });
+
+    const pendingTasks = taskRequests.filter(t => t.status === 'pending');
+
+    if (pendingTasks.length === 0) {
+        setAiReviewLogs(prev => [...prev, '✅ No pending requests to review.']);
+        setIsAiReviewing(false);
+        return;
+    }
+
+    setAiReviewLogs(prev => [...prev, `🔍 Found ${pendingTasks.length} pending request(s).`]);
+
+    for (const task of pendingTasks) {
+        try {
+            setAiReviewStats(prev => ({ ...prev, processed: prev.processed + 1 }));
+            setAiReviewLogs(prev => [...prev, `🤔 Analyzing task "${task.title}"...`]);
+
+            const { decision, reason } = await decideTaskCreationRequest(task);
+            setAiReviewLogs(prev => [...prev, `💡 AI decision: ${decision}. Reason: ${reason}`]);
+
+            if (decision === 'APPROVE') {
+                await handleApproveRequest(task);
+                setAiReviewStats(prev => ({ ...prev, approved: prev.approved + 1 }));
+                setAiReviewLogs(prev => [...prev, `[SUCCESS] Approved task "${task.title}".`]);
+            } else { // REJECT
+                const taskRef = doc(db, 'tasks', task.id);
+                await updateDoc(taskRef, {
+                    status: 'rejected',
+                    rejectionReason: `AI: ${reason}`
+                });
+                addToast(`Task "${task.title}" rejected by AI.`, 'info');
+                setAiReviewStats(prev => ({ ...prev, rejected: prev.rejected + 1 }));
+                setAiReviewLogs(prev => [...prev, `[REJECTED] Rejected task "${task.title}".`]);
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            setAiReviewStats(prev => ({ ...prev, failed: prev.failed + 1 }));
+            setAiReviewLogs(prev => [...prev, `[FAIL] Error processing "${task.title}": ${message}`]);
+            console.error(`Error during AI review for task ${task.id}:`, error);
+        }
+    }
+
+    addToast('AI task request review complete!', 'success');
+    setAiReviewLogs(prev => [...prev, '🏁 Review complete.']);
+    setIsAiReviewing(false);
+  };
+
 
   return (
     <div className="container mx-auto">
@@ -469,37 +536,88 @@ const TasksPage: React.FC = () => {
       
       {/* User Task Requests section */}
       <div className="mb-12">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">User Task Requests</h2>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">User Task Requests</h2>
+            <button
+                onClick={handleAiReviewRequests}
+                disabled={isAiReviewing || taskRequests.length === 0}
+                className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 disabled:bg-indigo-400"
+            >
+                {isAiReviewing ? <Spinner /> : <SparklesIcon className="w-5 h-5" />}
+                Run AI Review
+            </button>
+        </div>
+
+        {isAiReviewing && (
+            <div className="mb-6 bg-white dark:bg-slate-900 rounded-xl shadow-lg p-4">
+                <div className="text-sm font-medium mb-2 text-center sm:text-left text-gray-500 dark:text-gray-300">
+                    Processed: <span className="font-bold">{aiReviewStats.processed}</span> | 
+                    Approved: <span className="font-bold text-green-600 dark:text-green-400">{aiReviewStats.approved}</span> | 
+                    Rejected: <span className="font-bold text-red-600 dark:text-red-400">{aiReviewStats.rejected}</span> |
+                    Failed: <span className="font-bold text-yellow-600 dark:text-yellow-400">{aiReviewStats.failed}</span>
+                </div>
+                <div className="bg-gray-100 dark:bg-slate-800 rounded-lg p-4 max-h-48 overflow-y-auto">
+                    <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">{aiReviewLogs.join('\n')}</pre>
+                </div>
+            </div>
+        )}
+
         {loadingRequests ? <p>Loading requests...</p> : taskRequests.length === 0 ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No pending task requests.</p> : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {taskRequests.map(task => (
-                    <div key={task.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-lg flex flex-col">
-                        <div className="p-6 flex-grow">
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{task.userEmail || 'N/A'}</p>
-                            <h3 className="font-bold text-lg mb-2 text-gray-900 dark:text-white">{task.title}</h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
-                            <p className="text-xs text-gray-400 mt-2">Submitted: {formatDate(task.submittedAt || task.createdAt)}</p>
+                {taskRequests.map(task => {
+                    const isExpanded = expandedRequestId === task.id;
+                    return (
+                        <div key={task.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-lg flex flex-col">
+                            <div className="p-6 flex-grow cursor-pointer" onClick={() => handleToggleExpand(task.id)}>
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">{task.userEmail || 'N/A'}</p>
+                                        <h3 className="font-bold text-lg mb-2 text-gray-900 dark:text-white">{task.title}</h3>
+                                    </div>
+                                    <ChevronDownIcon className={`w-5 h-5 text-gray-400 transition-transform duration-300 flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
+                                </div>
+                                <p className={`text-sm text-gray-600 dark:text-gray-400 ${!isExpanded ? 'line-clamp-3' : ''}`}>{task.description}</p>
+                                
+                                <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-24 opacity-100 pt-4' : 'max-h-0 opacity-0'}`}>
+                                    {task.taskUrl && (
+                                        <div>
+                                            <h4 className="font-semibold text-sm mb-1 text-gray-700 dark:text-gray-300">Task URL</h4>
+                                            <a 
+                                                href={task.taskUrl} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="text-indigo-500 hover:underline break-all text-sm"
+                                            >
+                                                {task.taskUrl}
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <p className="text-xs text-gray-400 mt-2">Submitted: {formatDate(task.submittedAt || task.createdAt)}</p>
+                            </div>
+                            <div className="bg-gray-50 dark:bg-slate-800/50 p-4 space-y-2 text-sm mt-auto">
+                               <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
+                                    <span>Task Reward</span>
+                                    <span className="font-semibold">Rs {task.reward.toFixed(2)}</span>
+                               </div>
+                               <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
+                                    <span>Listing Fee</span>
+                                    <span className="font-semibold">Rs {taskListingFee.toFixed(2)}</span>
+                               </div>
+                               <div className="flex justify-between items-center font-bold text-gray-800 dark:text-white">
+                                    <span>Total Cost to User</span>
+                                    <span>Rs {(task.reward + taskListingFee).toFixed(2)}</span>
+                               </div>
+                            </div>
+                            <div className="p-4 flex gap-2">
+                                 <button onClick={() => handleApproveRequest(task)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400">Approve</button>
+                                 <button onClick={() => openRejectModal(task.id)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400">Reject</button>
+                            </div>
                         </div>
-                        <div className="bg-gray-50 dark:bg-slate-800/50 p-4 space-y-2 text-sm">
-                           <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
-                                <span>Task Reward</span>
-                                <span className="font-semibold">Rs {task.reward.toFixed(2)}</span>
-                           </div>
-                           <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
-                                <span>Listing Fee</span>
-                                <span className="font-semibold">Rs {taskListingFee.toFixed(2)}</span>
-                           </div>
-                           <div className="flex justify-between items-center font-bold text-gray-800 dark:text-white">
-                                <span>Total Cost to User</span>
-                                <span>Rs {(task.reward + taskListingFee).toFixed(2)}</span>
-                           </div>
-                        </div>
-                        <div className="p-4 flex gap-2">
-                             <button onClick={() => handleApproveRequest(task)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400">Approve</button>
-                             <button onClick={() => openRejectModal(task.id)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400">Reject</button>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         )}
       </div>

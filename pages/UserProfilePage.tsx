@@ -33,6 +33,7 @@ const UserProfilePage: React.FC = () => {
     const [taskSubmissions, setTaskSubmissions] = useState<UserTaskSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -100,7 +101,7 @@ const UserProfilePage: React.FC = () => {
     
     const handleDeleteUser = async () => {
         if (!userId) return;
-
+        setIsDeleting(true);
         try {
             await deleteDoc(doc(db, 'users', userId));
             addToast('User data permanently deleted.', 'success');
@@ -108,8 +109,10 @@ const UserProfilePage: React.FC = () => {
         } catch (error) {
             console.error("Error deleting user:", error);
             addToast('Failed to delete user.', 'error');
+        } finally {
+            setIsDeleting(false);
+            setIsDeleteConfirmOpen(false);
         }
-        setIsDeleteConfirmOpen(false);
     };
 
     const StatusBadge: React.FC<{status: string}> = ({ status }) => {
@@ -164,13 +167,14 @@ const UserProfilePage: React.FC = () => {
                         <div className="mt-6 border-t border-gray-200 dark:border-slate-800 pt-4">
                             <h3 className="text-md font-semibold text-red-600 dark:text-red-400">Danger Zone</h3>
                             <p className="mt-1 mb-3 text-xs text-gray-500 dark:text-gray-400">
-                                This action is irreversible. It will permanently delete the user's data from the database but cannot remove their authentication record.
+                                This will permanently delete the user's database record (profile, balance, etc.). It <strong>will not</strong> delete their login account, which must be managed from the Firebase Authentication console.
                             </p>
                             <button
                                 onClick={() => setIsDeleteConfirmOpen(true)}
-                                className="w-full text-center px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                                disabled={isDeleting}
+                                className="w-full text-center px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:bg-red-400"
                             >
-                                Delete User Permanently
+                                {isDeleting ? 'Deleting...' : 'Delete User Permanently'}
                             </button>
                         </div>
                     </div>
@@ -219,7 +223,7 @@ const UserProfilePage: React.FC = () => {
                 onConfirm={handleDeleteUser}
                 title="Delete User"
                 message={`Are you sure you want to permanently delete ${user.email}? This action cannot be undone.`}
-                confirmButtonText="Delete"
+                confirmButtonText={isDeleting ? 'Deleting...' : 'Delete'}
                 confirmButtonColor="bg-red-600 hover:bg-red-700"
             />
         </div>
