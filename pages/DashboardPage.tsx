@@ -11,6 +11,8 @@ import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import BarChart from '../components/BarChart';
 import RecentActivityFeed from '../components/RecentActivityFeed';
+import { Link } from 'react-router-dom';
+import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean }> = ({ title, value, icon, loading }) => (
   <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg flex items-center justify-between">
@@ -26,6 +28,25 @@ const StatCard: React.FC<{ title: string; value: number | string | null; icon: R
       {icon}
     </div>
   </div>
+);
+
+const QuickActionCard: React.FC<{ title: string; count: number | null; link: string; icon: React.ReactNode; loading: boolean }> = ({ title, count, link, icon, loading }) => (
+    <Link to={link} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-lg flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+        <div className="flex items-center gap-4">
+             <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-lg">
+                {icon}
+            </div>
+            <div>
+                <p className="font-semibold text-gray-800 dark:text-white">{title}</p>
+                 {loading ? (
+                    <div className="w-16 h-4 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse mt-1"></div>
+                 ) : (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{count ?? 0} pending</p>
+                 )}
+            </div>
+        </div>
+        <ArrowRightIcon className="w-5 h-5 text-gray-400" />
+    </Link>
 );
 
 
@@ -63,7 +84,8 @@ const DashboardPage: React.FC = () => {
       setLoadingBalance(false);
     });
 
-    const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('status', '==', 'pending'));
+    // CRITICAL FIX: Changed 'pending' to 'Pending' to match database value
+    const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending'));
     const unsubscribeWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
       setPendingWithdrawals(snapshot.size);
       setLoadingWithdrawals(false);
@@ -97,13 +119,6 @@ const DashboardPage: React.FC = () => {
       unsubscribeRequests();
     };
   }, []);
-
-  const totalPendingTasks = useMemo(() => {
-    const requests = pendingTaskRequests ?? 0;
-    const submissions = pendingSubmissions ?? 0;
-    if (loadingTaskRequests || loadingSubmissions) return null;
-    return requests + submissions;
-  }, [pendingTaskRequests, pendingSubmissions, loadingTaskRequests, loadingSubmissions]);
 
   const chartData = useMemo(() => {
     const data: { [key: string]: number } = {};
@@ -145,7 +160,8 @@ const DashboardPage: React.FC = () => {
             userCount,
             totalBalance,
             pendingWithdrawals,
-            pendingSubmissions: totalPendingTasks,
+            pendingSubmissions,
+            pendingTaskRequests
         };
         const report = await generateSmartReport(stats);
         setAiReport(report);
@@ -164,12 +180,23 @@ const DashboardPage: React.FC = () => {
       <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
         Admin Dashboard
       </h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard title="Total Users" value={userCount} icon={<UsersIcon className="w-6 h-6 text-indigo-500" />} loading={loadingUsers} />
-        <StatCard title="Total User Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<WalletIcon className="w-6 h-6 text-indigo-500" />} loading={loadingBalance} />
+        <StatCard title="User Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<WalletIcon className="w-6 h-6 text-indigo-500" />} loading={loadingBalance} />
         <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} loading={loadingWithdrawals} />
-        <StatCard title="Pending Task Reviews" value={totalPendingTasks} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions || loadingTaskRequests} />
+        <StatCard title="Pending Task Requests" value={pendingTaskRequests} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingTaskRequests} />
+        <StatCard title="Pending Submissions" value={pendingSubmissions} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions} />
       </div>
+
+      <div className="mt-8">
+        <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <QuickActionCard title="Manage Withdrawals" count={pendingWithdrawals} link="/withdrawals" icon={<WithdrawalIcon className="w-6 h-6 text-red-500" />} loading={loadingWithdrawals} />
+            <QuickActionCard title="Manage Tasks" count={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} link="/tasks" icon={<TasksIcon className="w-6 h-6 text-purple-500" />} loading={loadingTaskRequests || loadingSubmissions} />
+            <QuickActionCard title="Manage Users" count={null} link="/users" icon={<UsersIcon className="w-6 h-6 text-sky-500" />} loading={false} />
+        </div>
+      </div>
+
 
        <div className="mt-8 grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
