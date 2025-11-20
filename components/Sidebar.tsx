@@ -1,19 +1,22 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { HomeIcon } from './icons/HomeIcon';
-import { UsersIcon } from './icons/UsersIcon';
-import { TasksIcon } from './icons/TasksIcon';
-import { WithdrawalIcon } from './icons/WithdrawalIcon';
-import { ReferralIcon } from './icons/ReferralIcon';
-import { AiIcon } from './icons/AiIcon';
-import { ShieldIcon } from './icons/ShieldIcon';
-import { DepositIcon } from './icons/DepositIcon';
+import { 
+  LayoutDashboard, 
+  Users, 
+  CheckSquare, 
+  ArrowDownToLine, 
+  ArrowUpFromLine, 
+  Share2, 
+  Bot, 
+  ShieldAlert, 
+  Settings, 
+  LogOut, 
+  Store,
+  DollarSign,
+  X
+} from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
-import { GenericXIcon } from './icons/GenericXIcon';
-import { SettingsIcon } from './icons/SettingsIcon';
-import { RevenueIcon } from './icons/RevenueIcon';
-import { StoreIcon } from './icons/StoreIcon';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -21,9 +24,11 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const commonLinkClass = "flex items-center px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-lg transition-colors duration-200";
-  const activeLinkClass = "bg-indigo-600 text-white";
   const navigate = useNavigate();
+
+  // Base styling for links
+  const commonLinkClass = "flex items-center px-4 py-3.5 text-sm font-medium text-gray-400 rounded-xl transition-all duration-200 group hover:bg-slate-800 hover:text-emerald-400";
+  const activeLinkClass = "bg-emerald-600/10 text-emerald-500 shadow-none border border-emerald-600/20";
 
   const handleLogout = async () => {
     try {
@@ -35,125 +40,83 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   };
   
   const handleLinkClick = () => {
-    if (window.innerWidth < 768) { // md breakpoint
+    if (window.innerWidth < 768) { 
         onClose();
     }
   }
 
   return (
     <>
+      {/* Mobile Backdrop */}
       <div 
-        className={`fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={onClose}
         aria-hidden="true"
       ></div>
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-gray-900 text-white flex-shrink-0 flex flex-col p-4 z-40 transform transition-transform duration-300 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex justify-between items-center mb-10 px-4">
-          <div className="text-2xl font-bold">
-            <span className="bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
-                Admin Panel
-            </span>
+
+      {/* Sidebar Container */}
+      <aside className={`fixed top-0 left-0 h-full w-72 bg-slate-950 border-r border-slate-800 flex flex-col z-50 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        
+        {/* Header */}
+        <div className="flex justify-between items-center h-20 px-6 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+             <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-emerald-900/50">EH</div>
+             <span className="text-lg font-bold text-white tracking-tight">Earn Halal</span>
           </div>
-          <button onClick={onClose} className="md:hidden p-1">
-             <GenericXIcon className="w-6 h-6" />
+          <button onClick={onClose} className="md:hidden text-gray-400 hover:text-white p-2 rounded-lg hover:bg-slate-800">
+             <X size={20} />
           </button>
         </div>
-        <nav className="flex flex-col gap-2">
-          <NavLink 
-            to="/dashboard"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <HomeIcon className="w-5 h-5 mr-3" />
-            Dashboard
+
+        {/* Nav Links */}
+        <nav className="flex-1 flex flex-col gap-1 p-4 overflow-y-auto no-scrollbar">
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-2">Overview</div>
+          <NavLink to="/dashboard" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <LayoutDashboard size={20} className="mr-3" /> Dashboard
           </NavLink>
-          <NavLink 
-            to="/revenue"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <RevenueIcon className="w-5 h-5 mr-3" />
-            Revenue
+          <NavLink to="/revenue" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <DollarSign size={20} className="mr-3" /> Revenue
           </NavLink>
-          <NavLink 
-            to="/users"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <UsersIcon className="w-5 h-5 mr-3" />
-            Users
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-4">Management</div>
+          <NavLink to="/users" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Users size={20} className="mr-3" /> Users
           </NavLink>
-          <NavLink 
-            to="/tasks"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <TasksIcon className="w-5 h-5 mr-3" />
-            Tasks
+          <NavLink to="/tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <CheckSquare size={20} className="mr-3" /> Tasks
           </NavLink>
-           <NavLink 
-            to="/booster-store"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <StoreIcon className="w-5 h-5 mr-3" />
-            Booster Store
+          <NavLink to="/booster-store" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Store size={20} className="mr-3" /> Booster Store
           </NavLink>
-          <NavLink 
-            to="/withdrawals"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <WithdrawalIcon className="w-5 h-5 mr-3" />
-            Withdrawals
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-4">Finance</div>
+          <NavLink to="/withdrawals" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <ArrowUpFromLine size={20} className="mr-3" /> Withdrawals
           </NavLink>
-          <NavLink 
-            to="/deposits"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <DepositIcon className="w-5 h-5 mr-3" />
-            Deposits
+          <NavLink to="/deposits" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <ArrowDownToLine size={20} className="mr-3" /> Deposits
           </NavLink>
-          <NavLink 
-            to="/referrals"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <ReferralIcon className="w-5 h-5 mr-3" />
-            Referrals
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-4">System</div>
+          <NavLink to="/referrals" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Share2 size={20} className="mr-3" /> Referrals
           </NavLink>
-           <NavLink 
-            to="/ai-automations"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <AiIcon className="w-5 h-5 mr-3" />
-            AI Automations
+          <NavLink to="/ai-automations" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Bot size={20} className="mr-3" /> AI Automations
           </NavLink>
-          <NavLink 
-            to="/fraud-detection"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <ShieldIcon className="w-5 h-5 mr-3" />
-            Fraud Detection
+          <NavLink to="/fraud-detection" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <ShieldAlert size={20} className="mr-3" /> Fraud Detection
           </NavLink>
-          <NavLink 
-            to="/settings"
-            onClick={handleLinkClick}
-            className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}
-          >
-            <SettingsIcon className="w-5 h-5 mr-3" />
-            Settings
+          <NavLink to="/settings" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Settings size={20} className="mr-3" /> Settings
           </NavLink>
         </nav>
-        <div className="mt-auto px-4 py-3">
-          <button onClick={handleLogout} className="w-full flex items-center text-red-400 hover:text-red-300 transition-colors duration-200">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
-              </svg>
-              Logout
+
+        {/* Footer */}
+        <div className="p-4 border-t border-slate-800/50 bg-slate-950">
+          <button onClick={handleLogout} className="w-full flex items-center px-4 py-3 text-sm font-medium text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors duration-200">
+              <LogOut size={20} className="mr-3" />
+              Sign Out
           </button>
         </div>
       </aside>

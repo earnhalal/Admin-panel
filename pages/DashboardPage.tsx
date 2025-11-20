@@ -1,51 +1,60 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { UsersIcon } from '../components/icons/UsersIcon';
-import { WithdrawalIcon } from '../components/icons/WithdrawalIcon';
-import { TasksIcon } from '../components/icons/TasksIcon';
-import { WalletIcon } from '../components/icons/WalletIcon';
-import { SparklesIcon } from '../components/icons/SparklesIcon';
 import { generateSmartReport } from '../services/aiService';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import BarChart from '../components/BarChart';
 import RecentActivityFeed from '../components/RecentActivityFeed';
 import { Link } from 'react-router-dom';
-import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
+import { 
+  Users, 
+  ArrowUpRight, 
+  ArrowDownLeft, 
+  CheckSquare, 
+  Wallet, 
+  Sparkles, 
+  ChevronRight, 
+  TrendingUp
+} from 'lucide-react';
 
-const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean }> = ({ title, value, icon, loading }) => (
-  <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg flex items-center justify-between">
-    <div>
-      <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{title}</p>
-      {loading ? (
-        <div className="w-24 h-8 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse mt-1"></div>
-      ) : (
-        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
-      )}
+const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean; trend?: string }> = ({ title, value, icon, loading, trend }) => (
+  <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow duration-300">
+    <div className="flex items-start justify-between mb-4">
+       <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl text-emerald-600 dark:text-emerald-400">
+          {icon}
+       </div>
+       {trend && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-full">{trend}</span>}
     </div>
-    <div className="bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-full">
-      {icon}
+    <div>
+      <p className="text-sm font-medium text-gray-500 dark:text-gray-400 tracking-wide">{title}</p>
+      {loading ? (
+        <div className="w-24 h-8 bg-gray-100 dark:bg-slate-800 rounded-md animate-pulse mt-2"></div>
+      ) : (
+        <p className="text-3xl font-extrabold text-gray-900 dark:text-white mt-1 tracking-tight">{value}</p>
+      )}
     </div>
   </div>
 );
 
-const QuickActionCard: React.FC<{ title: string; count: number | null; link: string; icon: React.ReactNode; loading: boolean }> = ({ title, count, link, icon, loading }) => (
-    <Link to={link} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-lg flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-        <div className="flex items-center gap-4">
-             <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-lg">
-                {icon}
+const QuickActionCard: React.FC<{ title: string; count: number | null; link: string; icon: React.ReactNode; loading: boolean; colorClass: string }> = ({ title, count, link, icon, loading, colorClass }) => (
+    <Link to={link} className="group relative bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:border-emerald-500/30 hover:shadow-emerald-500/10 transition-all duration-300">
+        <div className="flex items-center justify-between">
+             <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-xl ${colorClass} bg-opacity-10`}>
+                    {React.cloneElement(icon as React.ReactElement, { className: `w-6 h-6 ${colorClass.replace('bg-', 'text-')}` })}
+                </div>
+                <div>
+                    <p className="font-bold text-gray-800 dark:text-white group-hover:text-emerald-600 transition-colors">{title}</p>
+                     {loading ? (
+                        <div className="w-16 h-4 bg-gray-100 dark:bg-slate-800 rounded-md animate-pulse mt-1"></div>
+                     ) : (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{count ?? 0} Pending Actions</p>
+                     )}
+                </div>
             </div>
-            <div>
-                <p className="font-semibold text-gray-800 dark:text-white">{title}</p>
-                 {loading ? (
-                    <div className="w-16 h-4 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse mt-1"></div>
-                 ) : (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{count ?? 0} pending</p>
-                 )}
-            </div>
+            <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-emerald-500 transition-colors" />
         </div>
-        <ArrowRightIcon className="w-5 h-5 text-gray-400" />
     </Link>
 );
 
@@ -84,7 +93,6 @@ const DashboardPage: React.FC = () => {
       setLoadingBalance(false);
     });
 
-    // CRITICAL FIX: Changed 'pending' to 'Pending' to match database value
     const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending'));
     const unsubscribeWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
       setPendingWithdrawals(snapshot.size);
@@ -176,70 +184,121 @@ const DashboardPage: React.FC = () => {
 
 
   return (
-    <div className="container mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
-        Admin Dashboard
-      </h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-        <StatCard title="Total Users" value={userCount} icon={<UsersIcon className="w-6 h-6 text-indigo-500" />} loading={loadingUsers} />
-        <StatCard title="User Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<WalletIcon className="w-6 h-6 text-indigo-500" />} loading={loadingBalance} />
-        <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} loading={loadingWithdrawals} />
-        <StatCard title="Pending Task Requests" value={pendingTaskRequests} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingTaskRequests} />
-        <StatCard title="Pending Submissions" value={pendingSubmissions} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} loading={loadingSubmissions} />
-      </div>
-
-      <div className="mt-8">
-        <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <QuickActionCard title="Manage Withdrawals" count={pendingWithdrawals} link="/withdrawals" icon={<WithdrawalIcon className="w-6 h-6 text-red-500" />} loading={loadingWithdrawals} />
-            <QuickActionCard title="Manage Tasks" count={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} link="/tasks" icon={<TasksIcon className="w-6 h-6 text-purple-500" />} loading={loadingTaskRequests || loadingSubmissions} />
-            <QuickActionCard title="Manage Users" count={null} link="/users" icon={<UsersIcon className="w-6 h-6 text-sky-500" />} loading={false} />
+    <div className="space-y-8">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Overview</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Welcome back, here is your platform summary.</p>
+        </div>
+        <div className="flex gap-3">
+            <button className="bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 text-sm font-bold hover:bg-gray-50 dark:hover:bg-slate-800">
+                Export Data
+            </button>
         </div>
       </div>
 
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title="Total Users" value={userCount} icon={<Users size={24} />} loading={loadingUsers} trend="+12% this week" />
+        <StatCard title="User Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<Wallet size={24} />} loading={loadingBalance} />
+        <StatCard title="Withdrawal Requests" value={pendingWithdrawals} icon={<ArrowUpRight size={24} />} loading={loadingWithdrawals} />
+        <StatCard title="Pending Tasks" value={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} icon={<CheckSquare size={24} />} loading={loadingTaskRequests || loadingSubmissions} />
+      </div>
 
-       <div className="mt-8 grid grid-cols-1 xl:grid-cols-3 gap-8">
-        <div className="xl:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
-           <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4">
-             New User Sign-ups (Last 7 Days)
-           </h2>
-           <div className="h-80">
-            <BarChart data={chartData} />
-           </div>
+      {/* Action Area */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        
+        {/* Quick Actions */}
+        <div className="xl:col-span-2 space-y-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Action Required</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <QuickActionCard 
+                    title="Review Withdrawals" 
+                    count={pendingWithdrawals} 
+                    link="/withdrawals" 
+                    icon={<ArrowUpRight />} 
+                    loading={loadingWithdrawals} 
+                    colorClass="bg-amber-500 text-amber-500"
+                />
+                <QuickActionCard 
+                    title="Task Submissions" 
+                    count={pendingSubmissions} 
+                    link="/tasks" 
+                    icon={<CheckSquare />} 
+                    loading={loadingSubmissions} 
+                    colorClass="bg-emerald-500 text-emerald-500"
+                />
+                <QuickActionCard 
+                    title="Task Approval Requests" 
+                    count={pendingTaskRequests} 
+                    link="/tasks" 
+                    icon={<CheckSquare />} 
+                    loading={loadingTaskRequests} 
+                    colorClass="bg-blue-500 text-blue-500"
+                />
+                <QuickActionCard 
+                    title="User Directory" 
+                    count={null} 
+                    link="/users" 
+                    icon={<Users />} 
+                    loading={false} 
+                    colorClass="bg-purple-500 text-purple-500"
+                />
+            </div>
+
+            {/* Chart Section */}
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800">
+               <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <TrendingUp size={20} className="text-emerald-500" /> User Growth
+                    </h2>
+                    <select className="bg-gray-50 dark:bg-slate-800 border-none text-sm rounded-lg px-3 py-1 focus:ring-2 focus:ring-emerald-500">
+                        <option>Last 7 Days</option>
+                        <option>Last 30 Days</option>
+                    </select>
+               </div>
+               <div className="h-72">
+                <BarChart data={chartData} />
+               </div>
+            </div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
-           <RecentActivityFeed />
+
+        {/* Sidebar Area (Feed & AI) */}
+        <div className="space-y-8">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-6 rounded-2xl shadow-lg text-white">
+                <div className="flex items-center gap-2 mb-4">
+                    <Sparkles size={24} className="text-yellow-300" />
+                    <h2 className="text-lg font-bold">AI Insights</h2>
+                </div>
+                
+                {isReportLoading ? (
+                    <div className="flex items-center gap-2 text-emerald-100">
+                        <Spinner /> Generating insights...
+                    </div>
+                ) : aiReport ? (
+                    <div className="prose prose-sm prose-invert max-w-none bg-white/10 p-4 rounded-xl backdrop-blur-sm text-emerald-50 whitespace-pre-wrap text-xs leading-relaxed">{aiReport}</div>
+                ) : (
+                    <div className="text-center py-4">
+                        <p className="text-emerald-100 mb-4 text-sm">
+                        Get a smart summary of your platform's performance instantly.
+                        </p>
+                        <button 
+                            onClick={handleGenerateReport}
+                            className="w-full bg-white text-emerald-700 font-bold py-3 px-4 rounded-xl shadow-md hover:bg-emerald-50 transition-colors duration-200 text-sm"
+                        >
+                            Generate Report
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800">
+               <RecentActivityFeed />
+            </div>
         </div>
        </div>
-
-       <div className="mt-8 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
-          <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4 flex items-center gap-2">
-              <SparklesIcon className="w-6 h-6 text-purple-500" />
-              AI Smart Report
-          </h2>
-          
-          {isReportLoading ? (
-              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                  <Spinner /> Generating your report...
-              </div>
-          ) : aiReport ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{aiReport}</div>
-          ) : (
-              <>
-                  <p className="text-gray-600 dark:text-gray-300 mb-4">
-                  Click the button to get an AI-powered summary of your app's current performance.
-                  </p>
-                  <button 
-                      onClick={handleGenerateReport}
-                      disabled={isReportLoading}
-                      className="inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 disabled:bg-purple-400"
-                  >
-                      <SparklesIcon className="w-5 h-5" />
-                      Generate Report
-                  </button>
-              </>
-          )}
-        </div>
     </div>
   );
 };
