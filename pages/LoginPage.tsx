@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { Lock } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -41,48 +42,51 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-slate-950 px-4">
-      <div className="w-full max-w-md p-8 space-y-8 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800">
-        <div className="text-center">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-slate-950 dark:to-slate-900 px-4">
+      <div className="w-full max-w-md p-8 space-y-8 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-emerald-100 dark:border-slate-800">
+        <div className="flex flex-col items-center text-center">
+          <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 mb-6">
+             <Lock size={32} strokeWidth={2.5} />
+          </div>
           <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white">
-            <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">
-              Earn Halal
-            </span>
+            Earn Halal Admin
           </h2>
           <p className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">
-            Admin Control Panel
+            Secure Access Portal
           </p>
         </div>
+        
         {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-300 p-4 rounded-r-lg text-sm" role="alert">
-                <span className="block sm:inline">{error}</span>
+            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-300 p-4 rounded-r-lg text-sm font-medium" role="alert">
+                {error}
             </div>
         )}
+
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4">
             <div>
-              <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email address</label>
+              <label htmlFor="email-address" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
               <input
                 id="email-address"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none block w-full px-4 py-3 border border-gray-300 dark:border-slate-700 rounded-xl placeholder-gray-400 text-gray-900 dark:text-white bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="appearance-none block w-full px-4 py-3.5 border border-gray-200 dark:border-slate-700 rounded-xl placeholder-gray-400 text-gray-900 dark:text-white bg-gray-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                 placeholder="admin@earnhalal.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+              <label htmlFor="password" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Password</label>
               <input
                 id="password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
                 required
-                className="appearance-none block w-full px-4 py-3 border border-gray-300 dark:border-slate-700 rounded-xl placeholder-gray-400 text-gray-900 dark:text-white bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                className="appearance-none block w-full px-4 py-3.5 border border-gray-200 dark:border-slate-700 rounded-xl placeholder-gray-400 text-gray-900 dark:text-white bg-gray-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -94,9 +98,14 @@ const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-bold rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:bg-emerald-400 disabled:cursor-not-allowed shadow-lg shadow-emerald-600/30 transition-all duration-200 hover:scale-[1.02]"
+              className="group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-bold rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:bg-emerald-400 disabled:cursor-not-allowed shadow-lg shadow-emerald-600/30 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
             >
-              {loading ? 'Authenticating...' : 'Sign In'}
+              {loading ? (
+                  <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Authenticating...
+                  </div>
+              ) : 'Sign In'}
             </button>
           </div>
         </form>

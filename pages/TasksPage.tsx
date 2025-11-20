@@ -7,20 +7,21 @@ import { User } from './UsersPage';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Spinner from '../components/Spinner';
-import { CheckIcon } from '../components/icons/CheckIcon';
-import { XIcon } from '../components/icons/XIcon';
-import { SparklesIcon } from '../components/icons/SparklesIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
-import { YouTubeIcon } from '../components/icons/YouTubeIcon';
-import { InstagramIcon } from '../components/icons/InstagramIcon';
-import { FacebookIcon } from '../components/icons/FacebookIcon';
-import { GlobeIcon } from '../components/icons/GlobeIcon';
-import { LinkIcon } from '../components/icons/LinkIcon';
 import RejectionModal from '../components/RejectionModal';
-import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import { decideTaskCreationRequest } from '../services/aiService';
-
+import { 
+    Check, 
+    X, 
+    Sparkles, 
+    Youtube, 
+    Instagram, 
+    Facebook, 
+    Globe, 
+    Link as LinkIcon, 
+    ChevronDown 
+} from 'lucide-react';
 
 export type TaskType = 'youtube' | 'instagram' | 'facebook' | 'website' | 'other';
 
@@ -50,10 +51,10 @@ export interface UserTask {
 }
 
 const TASK_TYPE_ICONS: { [key in TaskType]: React.ReactNode } = {
-    youtube: <YouTubeIcon className="w-5 h-5 text-red-600" />,
-    instagram: <InstagramIcon className="w-5 h-5 text-pink-500" />,
-    facebook: <FacebookIcon className="w-5 h-5 text-blue-600" />,
-    website: <GlobeIcon className="w-5 h-5 text-gray-500" />,
+    youtube: <Youtube className="w-5 h-5 text-red-600" />,
+    instagram: <Instagram className="w-5 h-5 text-pink-500" />,
+    facebook: <Facebook className="w-5 h-5 text-blue-600" />,
+    website: <Globe className="w-5 h-5 text-gray-500" />,
     other: <LinkIcon className="w-5 h-5 text-gray-500" />,
 };
 
@@ -520,14 +521,14 @@ const TasksPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-2">
             <button
                 onClick={handleOpenAiModal}
-                className="inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"
+                className="inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl transition-colors duration-200 shadow-lg shadow-purple-500/30"
                 >
-                <SparklesIcon className="w-5 h-5" />
+                <Sparkles className="w-5 h-5" />
                 Create with AI
             </button>
             <button
                 onClick={() => handleOpenModal()}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl transition-colors duration-200 shadow-lg shadow-indigo-500/30"
             >
                 Create New Task
             </button>
@@ -541,9 +542,9 @@ const TasksPage: React.FC = () => {
             <button
                 onClick={handleAiReviewRequests}
                 disabled={isAiReviewing || taskRequests.length === 0}
-                className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 disabled:bg-indigo-400"
+                className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl transition-colors duration-200 disabled:bg-indigo-400 shadow-lg shadow-indigo-500/30"
             >
-                {isAiReviewing ? <Spinner /> : <SparklesIcon className="w-5 h-5" />}
+                {isAiReviewing ? <Spinner /> : <Sparkles className="w-5 h-5" />}
                 Run AI Review
             </button>
         </div>
@@ -567,14 +568,14 @@ const TasksPage: React.FC = () => {
                 {taskRequests.map(task => {
                     const isExpanded = expandedRequestId === task.id;
                     return (
-                        <div key={task.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-lg flex flex-col">
+                        <div key={task.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-all duration-200 flex flex-col">
                             <div className="p-6 flex-grow cursor-pointer" onClick={() => handleToggleExpand(task.id)}>
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">{task.userEmail || 'N/A'}</p>
+                                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{task.userEmail || 'N/A'}</p>
                                         <h3 className="font-bold text-lg mb-2 text-gray-900 dark:text-white">{task.title}</h3>
                                     </div>
-                                    <ChevronDownIcon className={`w-5 h-5 text-gray-400 transition-transform duration-300 flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
+                                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-300 flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                                 </div>
                                 <p className={`text-sm text-gray-600 dark:text-gray-400 ${!isExpanded ? 'line-clamp-3' : ''}`}>{task.description}</p>
                                 
@@ -595,9 +596,9 @@ const TasksPage: React.FC = () => {
                                     )}
                                 </div>
                                 
-                                <p className="text-xs text-gray-400 mt-2">Submitted: {formatDate(task.submittedAt || task.createdAt)}</p>
+                                <p className="text-xs text-gray-400 mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">Submitted: {formatDate(task.submittedAt || task.createdAt)}</p>
                             </div>
-                            <div className="bg-gray-50 dark:bg-slate-800/50 p-4 space-y-2 text-sm mt-auto">
+                            <div className="bg-gray-50 dark:bg-slate-800/50 p-4 space-y-2 text-sm mt-auto border-t border-gray-100 dark:border-slate-800">
                                <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
                                     <span>Task Reward</span>
                                     <span className="font-semibold">Rs {task.reward.toFixed(2)}</span>
@@ -606,14 +607,14 @@ const TasksPage: React.FC = () => {
                                     <span>Listing Fee</span>
                                     <span className="font-semibold">Rs {taskListingFee.toFixed(2)}</span>
                                </div>
-                               <div className="flex justify-between items-center font-bold text-gray-800 dark:text-white">
+                               <div className="flex justify-between items-center font-bold text-emerald-600 dark:text-emerald-400 pt-2 border-t border-gray-200 dark:border-slate-700">
                                     <span>Total Cost to User</span>
                                     <span>Rs {(task.reward + taskListingFee).toFixed(2)}</span>
                                </div>
                             </div>
                             <div className="p-4 flex gap-2">
-                                 <button onClick={() => handleApproveRequest(task)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400">Approve</button>
-                                 <button onClick={() => openRejectModal(task.id)} disabled={actionLoading[task.id]} className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400">Reject</button>
+                                 <button onClick={() => handleApproveRequest(task)} disabled={actionLoading[task.id]} className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:bg-emerald-400 transition-colors">Approve</button>
+                                 <button onClick={() => openRejectModal(task.id)} disabled={actionLoading[task.id]} className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:bg-rose-400 transition-colors">Reject</button>
                             </div>
                         </div>
                     );
@@ -627,20 +628,20 @@ const TasksPage: React.FC = () => {
         {loadingManaged ? <p>Loading tasks...</p> : liveTasks.length === 0 ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No live tasks found.</p> :
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {liveTasks.map(task => (
-                  <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md flex flex-col">
+                  <div key={task.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col hover:shadow-md transition-all">
                       <div className="flex-grow">
-                          <div className="flex justify-between items-start">
-                              <h3 className="font-bold text-lg mb-1">{task.title}</h3>
-                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Live</span>
+                          <div className="flex justify-between items-start mb-2">
+                              <h3 className="font-bold text-lg text-gray-900 dark:text-white">{task.title}</h3>
+                              <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">Live</span>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
                       </div>
-                      <div className="mt-4 flex justify-between items-center">
-                          <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
-                          <div className="flex gap-2">
-                              <button onClick={() => handleToggleStatus(task)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Pause</button>
-                              <button onClick={() => handleOpenModal(task)} className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:underline">Edit</button>
-                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
+                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                          <span className="font-bold text-xl text-emerald-600 dark:text-emerald-400">Rs {task.reward.toFixed(2)}</span>
+                          <div className="flex gap-3">
+                              <button onClick={() => handleToggleStatus(task)} className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800">Pause</button>
+                              <button onClick={() => handleOpenModal(task)} className="text-sm font-semibold text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Edit</button>
+                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700">Delete</button>
                           </div>
                       </div>
                   </div>
@@ -654,20 +655,20 @@ const TasksPage: React.FC = () => {
         {loadingManaged ? <p>Loading history...</p> : taskHistory.length === 0 ? <p className="text-center py-10 text-gray-500 dark:text-gray-400">No historical tasks found.</p> :
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {taskHistory.map(task => (
-                  <div key={task.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-md flex flex-col opacity-70">
+                  <div key={task.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col opacity-75 hover:opacity-100 transition-opacity">
                       <div className="flex-grow">
-                          <div className="flex justify-between items-start">
-                              <h3 className="font-bold text-lg mb-1">{task.title}</h3>
-                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${task.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'}`}>{task.status}</span>
+                          <div className="flex justify-between items-start mb-2">
+                              <h3 className="font-bold text-lg text-gray-900 dark:text-white">{task.title}</h3>
+                              <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${task.status === 'rejected' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'}`}>{task.status}</span>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
-                          {task.rejectionReason && <p className="text-xs text-red-500 mt-2">Reason: {task.rejectionReason}</p>}
+                          {task.rejectionReason && <p className="text-xs text-rose-500 font-medium mt-2">Reason: {task.rejectionReason}</p>}
                       </div>
-                      <div className="mt-4 flex justify-between items-center">
-                          <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {task.reward.toFixed(2)}</span>
-                          <div className="flex gap-2">
-                              {task.status === 'inactive' && <button onClick={() => handleToggleStatus(task)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Activate</button>}
-                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
+                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                          <span className="font-bold text-xl text-gray-600 dark:text-gray-400">Rs {task.reward.toFixed(2)}</span>
+                          <div className="flex gap-3">
+                              {task.status === 'inactive' && <button onClick={() => handleToggleStatus(task)} className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-800">Activate</button>}
+                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700">Delete</button>
                           </div>
                       </div>
                   </div>
@@ -712,14 +713,14 @@ const TasksPage: React.FC = () => {
                                         <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} /></td>
                                         <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="text-gray-900 dark:text-white whitespace-no-wrap">{sub.userEmail}</p></td>
                                         <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="text-gray-900 dark:text-white whitespace-no-wrap">{sub.taskTitle}</p><p className="text-gray-600 dark:text-gray-400 whitespace-no-wrap">Reward: Rs {sub.taskReward?.toFixed(2)}</p></td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400 transition-colors">{actionLoading[sub.id] ? <Spinner /> : <CheckIcon className="w-4 h-4" />}</button><button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400 transition-colors">{actionLoading[sub.id] ? <Spinner /> : <XIcon className="w-4 h-4" />}</button></div></td>
+                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:bg-emerald-400 transition-colors">{actionLoading[sub.id] ? <Spinner /> : <Check className="w-4 h-4" />}</button><button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-rose-600 rounded-md hover:bg-rose-700 disabled:bg-rose-400 transition-colors">{actionLoading[sub.id] ? <Spinner /> : <X className="w-4 h-4" />}</button></div></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                     <div className="md:hidden">
-                        {paginatedSubmissions.map(sub => ( <div key={sub.id} className="p-4 border-b border-gray-200 dark:border-slate-800 flex items-start gap-4"><Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} className="mt-1" /><div className="flex-1"><p className="font-semibold text-gray-900 dark:text-white">{sub.taskTitle}</p><p className="text-sm text-gray-500 dark:text-gray-400">from {sub.userEmail}</p><div className="mt-2 flex justify-between items-center"><p className="font-bold text-indigo-600 dark:text-indigo-400">Rs {sub.taskReward?.toFixed(2)}</p><div className="flex items-center gap-2"><button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></div></div></div>))}
+                        {paginatedSubmissions.map(sub => ( <div key={sub.id} className="p-4 border-b border-gray-200 dark:border-slate-800 flex items-start gap-4"><Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} className="mt-1" /><div className="flex-1"><p className="font-semibold text-gray-900 dark:text-white">{sub.taskTitle}</p><p className="text-sm text-gray-500 dark:text-gray-400">from {sub.userEmail}</p><div className="mt-2 flex justify-between items-center"><p className="font-bold text-indigo-600 dark:text-indigo-400">Rs {sub.taskReward?.toFixed(2)}</p><div className="flex items-center gap-2"><button onClick={() => handleApproveSubmission(sub)} disabled={actionLoading[sub.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><Check className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => handleRejectSubmission(sub.id)} disabled={actionLoading[sub.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><X className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></div></div></div>))}
                     </div>
                     <Pagination currentPage={currentSubmissionsPage} totalPages={Math.ceil(submissions.length / ITEMS_PER_PAGE)} onPageChange={setCurrentSubmissionsPage} />
                 </div>
