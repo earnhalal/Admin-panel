@@ -16,6 +16,7 @@ import SettingsPage from './pages/SettingsPage';
 import UserProfilePage from './pages/UserProfilePage';
 import RevenuePage from './pages/RevenuePage';
 import BoosterStorePage from './pages/BoosterStorePage';
+import VideoAdsPage from './pages/VideoAdsPage';
 
 const App: React.FC = () => {
   return (
@@ -31,6 +32,7 @@ const App: React.FC = () => {
               <Route path="users" element={<UsersPage />} />
               <Route path="users/:userId" element={<UserProfilePage />} />
               <Route path="tasks" element={<TasksPage />} />
+              <Route path="video-ads" element={<VideoAdsPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />
               <Route path="referrals" element={<ReferralsPage />} />

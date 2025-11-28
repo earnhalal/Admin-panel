@@ -13,7 +13,8 @@ import {
   LogOut, 
   Store,
   DollarSign,
-  X
+  X,
+  PlayCircle
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
@@ -84,6 +85,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           </NavLink>
           <NavLink to="/tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <CheckSquare size={20} className="mr-3" /> Tasks
+          </NavLink>
+          <NavLink to="/video-ads" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <PlayCircle size={20} className="mr-3" /> Video Ads
           </NavLink>
           <NavLink to="/booster-store" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Store size={20} className="mr-3" /> Booster Store
