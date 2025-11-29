@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { collection, query, where, getDocs, doc, runTransaction, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
-import { decideReferralApproval, decideTaskApproval, decideWithdrawalRequest } from '../services/aiService';
+import { decideReferralApproval, decideTaskApproval, decideWithdrawalRequest, generateSmartReport } from '../services/aiService';
 import { User } from './UsersPage';
 import { Task, UserTask } from './TasksPage';
 import { AiIcon } from '../components/icons/AiIcon';
 import Spinner from '../components/Spinner';
+import { SparklesIcon } from '../components/icons/SparklesIcon';
 
 interface Referral {
     id: string;
@@ -29,6 +30,7 @@ interface WithdrawalRequest {
 const AiAutomationsPage: React.FC = () => {
     const { addToast } = useToast();
 
+    // Stats for Automations
     const [isProcessingReferrals, setIsProcessingReferrals] = useState(false);
     const [referralLogs, setReferralLogs] = useState<string[]>([]);
     const [referralStats, setReferralStats] = useState({ processed: 0, approved: 0, rejected: 0, failed: 0 });
@@ -40,6 +42,10 @@ const AiAutomationsPage: React.FC = () => {
     const [isProcessingWithdrawals, setIsProcessingWithdrawals] = useState(false);
     const [withdrawalLogs, setWithdrawalLogs] = useState<string[]>([]);
     const [withdrawalStats, setWithdrawalStats] = useState({ processed: 0, kept_pending: 0, rejected: 0, failed: 0 });
+
+    // Stats for Smart Report
+    const [aiReport, setAiReport] = useState<string | null>(null);
+    const [isReportLoading, setIsReportLoading] = useState(false);
 
 
     const handleApproveBonus = async (referral: Referral) => {
@@ -256,46 +262,87 @@ const AiAutomationsPage: React.FC = () => {
         }
     };
 
+    const handleGenerateSmartReport = async () => {
+        setIsReportLoading(true);
+        setAiReport(null);
+        try {
+            // Fetch live stats for the report
+            const usersSnap = await getDocs(collection(db, 'users'));
+            const userCount = usersSnap.size;
+            const totalBalance = usersSnap.docs.reduce((acc, doc) => acc + (doc.data().balance || 0), 0);
+            
+            const withdrawSnap = await getDocs(query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending')));
+            const pendingWithdrawals = withdrawSnap.size;
+
+            const approvedWithdrawalsSnap = await getDocs(query(collection(db, 'withdrawal_requests'), where('status', '==', 'Approved')));
+            const totalWithdrawn = approvedWithdrawalsSnap.docs.reduce((acc, doc) => acc + (doc.data().amount || 0), 0);
+
+            const submissionsSnap = await getDocs(query(collection(db, 'userTasks'), where('status', '==', 'submitted')));
+            const pendingSubmissions = submissionsSnap.size;
+            
+            const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('status', '==', 'pending')));
+            const pendingTaskRequests = tasksSnap.size;
+
+            const stats = {
+                userCount,
+                totalBalance,
+                totalWithdrawn,
+                pendingWithdrawals,
+                pendingSubmissions,
+                pendingTaskRequests
+            };
+
+            const report = await generateSmartReport(stats);
+            setAiReport(report);
+            addToast("Business report generated successfully!", "success");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Report generation failed: ${message}`, 'error');
+        } finally {
+            setIsReportLoading(false);
+        }
+    };
+
 
     const AutomationCard: React.FC<{
         title: string;
         description: string;
         onRun: () => void;
         isProcessing: boolean;
-        stats: any; // Simplified for multiple stat types
+        stats: any;
         logs: string[];
         icon: React.ReactNode;
         resultLabels: { [key: string]: string };
     }> = ({ title, description, onRun, isProcessing, stats, logs, icon, resultLabels }) => (
-        <div className="bg-white dark:bg-slate-900 shadow-lg rounded-xl p-6">
+        <div className="bg-white dark:bg-slate-900 shadow-sm border border-gray-100 dark:border-slate-800 rounded-2xl p-6">
             <div className="flex items-start gap-4">
-                <div className="bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg">{icon}</div>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-xl text-indigo-600 dark:text-indigo-400">{icon}</div>
                 <div>
                     <h2 className="text-xl font-bold text-gray-800 dark:text-white">{title}</h2>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">{description}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{description}</p>
                 </div>
             </div>
             <div className="mt-6 flex flex-col sm:flex-row items-center gap-4">
                  <button
                     onClick={onRun}
                     disabled={isProcessing}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors duration-200 disabled:bg-indigo-400 disabled:cursor-wait"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors duration-200 disabled:bg-indigo-400 disabled:cursor-wait"
                 >
-                    {isProcessing ? <><Spinner /> Processing...</> : 'Run AI Now'}
+                    {isProcessing ? <><Spinner /> Processing...</> : 'Run Auto-Pilot'}
                 </button>
-                <div className="flex-1 text-sm text-center sm:text-left text-gray-500 dark:text-gray-300">
+                <div className="flex-1 text-xs text-center sm:text-left text-gray-500 dark:text-gray-300">
                     Processed: <span className="font-bold">{stats.processed}</span> | 
                     {Object.entries(resultLabels).map(([key, label]) => (
                         <React.Fragment key={key}>
-                            {` ${label}: `}<span className={`font-bold ${key.includes('reject') ? 'text-red-600 dark:text-red-400' : key.includes('approve') ? 'text-green-600 dark:text-green-400' : ''}`}>{stats[key]}</span> |
+                            {` ${label}: `}<span className={`font-bold ${key.includes('reject') ? 'text-rose-600 dark:text-rose-400' : key.includes('approve') || key.includes('kept') ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>{stats[key]}</span> |
                         </React.Fragment>
                     ))}
-                    Failed: <span className="font-bold text-yellow-600 dark:text-yellow-400">{stats.failed}</span>
+                    Failed: <span className="font-bold text-amber-600 dark:text-amber-400">{stats.failed}</span>
                 </div>
             </div>
             {logs.length > 0 && (
-                <div className="mt-4 bg-gray-100 dark:bg-slate-800 rounded-lg p-4 max-h-60 overflow-y-auto">
-                    <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">{logs.join('\n')}</pre>
+                <div className="mt-4 bg-gray-50 dark:bg-slate-950 rounded-lg p-4 max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800">
+                    <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap font-mono">{logs.join('\n')}</pre>
                 </div>
             )}
         </div>
@@ -304,37 +351,71 @@ const AiAutomationsPage: React.FC = () => {
     return (
         <div className="container mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">AI Automations</h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-8">Use AI to automate repetitive approval tasks. Click a button to process all pending items in a category.</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-8">Deploy AI agents to automate platform management tasks and generate insights.</p>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                 {/* Smart Report Card - New Addition */}
+                <div className="lg:col-span-3 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl p-6 shadow-lg text-white">
+                    <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                                <SparklesIcon className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold">AI Smart Business Report</h2>
+                                <p className="text-purple-100 text-sm mt-1">Get an instant, data-driven summary of your platform's performance.</p>
+                            </div>
+                        </div>
+                         <button 
+                            onClick={handleGenerateSmartReport}
+                            disabled={isReportLoading}
+                            className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:bg-purple-50 transition-colors disabled:opacity-75 disabled:cursor-wait flex items-center gap-2"
+                        >
+                            {isReportLoading ? <Spinner /> : null}
+                            {isReportLoading ? 'Analyzing...' : 'Generate New Report'}
+                        </button>
+                    </div>
 
-            <div className="space-y-8">
+                    {aiReport && (
+                        <div className="mt-6 bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 animate-fade-in">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-purple-200 mb-2">AI Analysis</h3>
+                            <div className="prose prose-sm prose-invert max-w-none text-white whitespace-pre-wrap leading-relaxed">
+                                {aiReport}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="space-y-6">
                 <AutomationCard 
-                    title="Withdrawal Request Automation"
-                    description="AI will check for suspicious withdrawal patterns and automatically reject high-risk requests."
+                    title="Withdrawal Request Auto-Pilot"
+                    description="AI checks for suspicious withdrawal patterns (new users, high amounts) and can reject them or flag for review."
                     onRun={processPendingWithdrawals}
                     isProcessing={isProcessingWithdrawals}
                     stats={withdrawalStats}
                     logs={withdrawalLogs}
-                    icon={<AiIcon className="w-6 h-6 text-indigo-500" />}
-                    resultLabels={{ kept_pending: 'Kept Pending', rejected: 'Rejected' }}
+                    icon={<AiIcon className="w-6 h-6" />}
+                    resultLabels={{ kept_pending: 'Review Needed', rejected: 'Rejected' }}
                 />
                 <AutomationCard 
-                    title="Referral Bonus Automation"
-                    description="AI will check if a referred user's payment is 'verified' and approve the bonus for the referrer accordingly."
+                    title="Referral Bonus Auto-Pilot"
+                    description="AI verifies if a referred user has a valid 'verified' payment status before releasing bonuses to referrers."
                     onRun={processPendingReferrals}
                     isProcessing={isProcessingReferrals}
                     stats={referralStats}
                     logs={referralLogs}
-                    icon={<AiIcon className="w-6 h-6 text-indigo-500" />}
+                    icon={<AiIcon className="w-6 h-6" />}
                     resultLabels={{ approved: 'Approved', rejected: 'Rejected' }}
                 />
                  <AutomationCard 
-                    title="Task Submission Automation"
-                    description="AI will approve task submissions based on the current policy. (Currently defaults to approval)."
+                    title="Task Submission Auto-Pilot"
+                    description="AI automatically approves standard task submissions based on predefined policies to speed up user payouts."
                     onRun={processPendingTasks}
                     isProcessing={isProcessingTasks}
                     stats={taskStats}
                     logs={taskLogs}
-                    icon={<AiIcon className="w-6 h-6 text-indigo-500" />}
+                    icon={<AiIcon className="w-6 h-6" />}
                     resultLabels={{ approved: 'Approved', rejected: 'Rejected' }}
                 />
             </div>

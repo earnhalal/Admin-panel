@@ -28,7 +28,7 @@ type SortConfig = { key: keyof User; direction: 'ascending' | 'descending' } | n
 
 const PaymentStatusBadge: React.FC<{ status: User['paymentStatus'] }> = ({ status }) => (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold capitalize
-        ${status === 'verified' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' :
+        ${status === 'verified' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
           status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
           status === 'rejected' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400' : 
           'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'}`}>
@@ -211,10 +211,10 @@ const UsersPage: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
         
         {selectedUsers.size > 0 && (
-            <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{selectedUsers.size} Selected</span>
-                <div className="h-4 w-px bg-emerald-200 dark:bg-emerald-700"></div>
-                <button onClick={() => handleBulkAction('verify')} className="text-xs font-semibold text-emerald-600 hover:text-emerald-800 disabled:opacity-50" disabled={actionLoading.bulk}>Verify</button>
+            <div className="flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20 px-4 py-2 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{selectedUsers.size} Selected</span>
+                <div className="h-4 w-px bg-indigo-200 dark:bg-indigo-700"></div>
+                <button onClick={() => handleBulkAction('verify')} className="text-xs font-semibold text-green-600 hover:text-green-800 disabled:opacity-50" disabled={actionLoading.bulk}>Verify</button>
                 <button onClick={() => handleBulkAction('reject')} className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:opacity-50" disabled={actionLoading.bulk}>Reject</button>
             </div>
         )}
@@ -227,7 +227,7 @@ const UsersPage: React.FC = () => {
             <input
             type="text"
             placeholder="Search users..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -235,7 +235,7 @@ const UsersPage: React.FC = () => {
         <div className="relative min-w-[200px]">
             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <select
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 appearance-none"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 appearance-none"
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value as PaymentStatusFilter)}
             >
@@ -259,10 +259,10 @@ const UsersPage: React.FC = () => {
                       indeterminate={selectedUsers.size > 0 && selectedUsers.size < paginatedUsers.length}
                   />
               </th>
-              <th onClick={() => requestSort('username')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-emerald-600">User</th>
-              <th onClick={() => requestSort('balance')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-emerald-600">Balance</th>
-              <th onClick={() => requestSort('paymentStatus')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-emerald-600">Status</th>
-              <th onClick={() => requestSort('createdAt')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-emerald-600">Joined</th>
+              <th onClick={() => requestSort('username')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">User</th>
+              <th onClick={() => requestSort('balance')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Balance</th>
+              <th onClick={() => requestSort('paymentStatus')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Status</th>
+              <th onClick={() => requestSort('createdAt')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Joined</th>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
@@ -277,7 +277,7 @@ const UsersPage: React.FC = () => {
                 </td>
                 <td className="px-6 py-4">
                   <Link to={`/users/${user.id}`} className="block">
-                      <span className="block text-sm font-bold text-gray-900 dark:text-white hover:text-emerald-600">{user.username || 'Anonymous'}</span>
+                      <span className="block text-sm font-bold text-gray-900 dark:text-white hover:text-indigo-600">{user.username || 'Anonymous'}</span>
                       <span className="block text-xs text-gray-500">{user.email}</span>
                   </Link>
                 </td>
@@ -292,12 +292,12 @@ const UsersPage: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => handleEditClick(user)} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 rounded-lg transition-colors" disabled={actionLoading[`save_${user.id}`]}>
+                      <button onClick={() => handleEditClick(user)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 rounded-lg transition-colors" disabled={actionLoading[`save_${user.id}`]}>
                           <MoreHorizontal size={18} />
                       </button>
                       {user.paymentStatus === 'pending' && (
                           <>
-                          <button onClick={() => handleVerifyPayment(user.id)} className="p-2 bg-emerald-100 text-emerald-600 hover:bg-emerald-200 rounded-lg" disabled={actionLoading[`verify_${user.id}`]}>
+                          <button onClick={() => handleVerifyPayment(user.id)} className="p-2 bg-green-100 text-green-600 hover:bg-green-200 rounded-lg" disabled={actionLoading[`verify_${user.id}`]}>
                             {actionLoading[`verify_${user.id}`] ? <Spinner /> : <Check size={16} />}
                           </button>
                           <button onClick={() => handleRejectPayment(user.id)} className="p-2 bg-rose-100 text-rose-600 hover:bg-rose-200 rounded-lg" disabled={actionLoading[`reject_${user.id}`]}>
@@ -345,7 +345,7 @@ const UsersPage: React.FC = () => {
                       <button onClick={() => handleEditClick(user)} className="flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 dark:bg-slate-800 dark:text-gray-300 rounded-xl hover:bg-gray-200 transition-colors">Edit</button>
                       {user.paymentStatus === 'pending' && (
                           <>
-                            <button onClick={() => handleVerifyPayment(user.id)} className="flex-1 py-2 flex justify-center items-center bg-emerald-100 text-emerald-700 font-bold rounded-xl">
+                            <button onClick={() => handleVerifyPayment(user.id)} className="flex-1 py-2 flex justify-center items-center bg-green-100 text-green-700 font-bold rounded-xl">
                                 {actionLoading[`verify_${user.id}`] ? <Spinner /> : 'Verify'}
                             </button>
                             <button onClick={() => handleRejectPayment(user.id)} className="flex-1 py-2 flex justify-center items-center bg-rose-100 text-rose-700 font-bold rounded-xl">

@@ -1,30 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { generateSmartReport } from '../services/aiService';
 import { useToast } from '../contexts/ToastContext';
-import Spinner from '../components/Spinner';
 import BarChart from '../components/BarChart';
 import RecentActivityFeed from '../components/RecentActivityFeed';
 import { Link } from 'react-router-dom';
 import { 
   Users, 
   ArrowUpRight, 
-  ArrowDownLeft, 
   CheckSquare, 
   Wallet, 
-  Sparkles, 
   ChevronRight, 
-  TrendingUp
+  TrendingUp,
+  PlayCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean; trend?: string }> = ({ title, value, icon, loading, trend }) => (
   <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow duration-300">
     <div className="flex items-start justify-between mb-4">
-       <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl text-emerald-600 dark:text-emerald-400">
+       <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl text-indigo-600 dark:text-indigo-400">
           {icon}
        </div>
-       {trend && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-full">{trend}</span>}
+       {trend && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-full">{trend}</span>}
     </div>
     <div>
       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 tracking-wide">{title}</p>
@@ -37,23 +36,24 @@ const StatCard: React.FC<{ title: string; value: number | string | null; icon: R
   </div>
 );
 
-const QuickActionCard: React.FC<{ title: string; count: number | null; link: string; icon: React.ReactNode; loading: boolean; colorClass: string }> = ({ title, count, link, icon, loading, colorClass }) => (
-    <Link to={link} className="group relative bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:border-emerald-500/30 hover:shadow-emerald-500/10 transition-all duration-300">
-        <div className="flex items-center justify-between">
-             <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${colorClass} bg-opacity-10`}>
-                    {React.cloneElement(icon as React.ReactElement, { className: `w-6 h-6 ${colorClass.replace('bg-', 'text-')}` })}
-                </div>
-                <div>
-                    <p className="font-bold text-gray-800 dark:text-white group-hover:text-emerald-600 transition-colors">{title}</p>
-                     {loading ? (
-                        <div className="w-16 h-4 bg-gray-100 dark:bg-slate-800 rounded-md animate-pulse mt-1"></div>
-                     ) : (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{count ?? 0} Pending Actions</p>
-                     )}
-                </div>
+const QuickActionCard: React.FC<{ title: string; count: number | null; link: string; icon: React.ReactNode; loading: boolean; colorClass: string; description?: string }> = ({ title, count, link, icon, loading, colorClass, description }) => (
+    <Link to={link} className="group relative bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:border-indigo-500/30 hover:shadow-indigo-500/10 transition-all duration-300 flex items-center justify-between">
+        <div className="flex items-center gap-5">
+            <div className={`p-4 rounded-xl ${colorClass} bg-opacity-10 shrink-0`}>
+                {React.cloneElement(icon as React.ReactElement, { className: `w-8 h-8 ${colorClass.replace('bg-', 'text-')}` })}
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-emerald-500 transition-colors" />
+            <div>
+                <h3 className="font-bold text-lg text-gray-800 dark:text-white group-hover:text-indigo-600 transition-colors">{title}</h3>
+                {description && <p className="text-sm text-gray-400 mb-1">{description}</p>}
+                {loading ? (
+                    <div className="w-20 h-5 bg-gray-100 dark:bg-slate-800 rounded-md animate-pulse"></div>
+                ) : (
+                    <p className={`text-sm font-bold ${count && count > 0 ? 'text-red-500' : 'text-gray-500'}`}>{count} Pending</p>
+                )}
+            </div>
+        </div>
+        <div className="bg-gray-50 dark:bg-slate-800 p-2 rounded-full group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 transition-colors">
+             <ChevronRight className="w-6 h-6 text-gray-300 group-hover:text-indigo-500 transition-colors" />
         </div>
     </Link>
 );
@@ -73,8 +73,9 @@ const DashboardPage: React.FC = () => {
   const [loadingTaskRequests, setLoadingTaskRequests] = useState(true);
   const [loadingBalance, setLoadingBalance] = useState(true);
 
-  const [aiReport, setAiReport] = useState<string | null>(null);
-  const [isReportLoading, setIsReportLoading] = useState(false);
+  // UI States
+  const [showActivity, setShowActivity] = useState(true);
+
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -159,102 +160,80 @@ const DashboardPage: React.FC = () => {
     };
   }, [allUsers]);
 
-
-  const handleGenerateReport = async () => {
-    setIsReportLoading(true);
-    setAiReport(null);
-    try {
-        const stats = {
-            userCount,
-            totalBalance,
-            pendingWithdrawals,
-            pendingSubmissions,
-            pendingTaskRequests
-        };
-        const report = await generateSmartReport(stats);
-        setAiReport(report);
-        addToast("AI Smart Report generated successfully!", "success");
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "An unknown error occurred.";
-        addToast(message, 'error');
-    } finally {
-        setIsReportLoading(false);
-    }
-  };
-
-
   return (
     <div className="space-y-8">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Overview</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">Welcome back, here is your platform summary.</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Overview of your platform's daily activity.</p>
         </div>
         <div className="flex gap-3">
-            <button className="bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 text-sm font-bold hover:bg-gray-50 dark:hover:bg-slate-800">
+            <button className="bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 text-sm font-bold hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
                 Export Data
             </button>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Users" value={userCount} icon={<Users size={24} />} loading={loadingUsers} trend="+12% this week" />
-        <StatCard title="User Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<Wallet size={24} />} loading={loadingBalance} />
-        <StatCard title="Withdrawal Requests" value={pendingWithdrawals} icon={<ArrowUpRight size={24} />} loading={loadingWithdrawals} />
-        <StatCard title="Pending Tasks" value={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} icon={<CheckSquare size={24} />} loading={loadingTaskRequests || loadingSubmissions} />
+      {/* Main Action Area - Moved to Top */}
+      <div>
+         <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <CheckSquare className="text-indigo-500" />
+            Daily Actions
+         </h2>
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <QuickActionCard 
+                title="Withdrawals" 
+                description="Review pending payouts"
+                count={pendingWithdrawals} 
+                link="/withdrawals" 
+                icon={<ArrowUpRight />} 
+                loading={loadingWithdrawals} 
+                colorClass="bg-amber-500 text-amber-500"
+            />
+            <QuickActionCard 
+                title="Task Submissions" 
+                description="Verify user proof"
+                count={pendingSubmissions} 
+                link="/tasks" 
+                icon={<CheckSquare />} 
+                loading={loadingSubmissions} 
+                colorClass="bg-indigo-500 text-indigo-500"
+            />
+            <QuickActionCard 
+                title="Ad Campaigns" 
+                description="Manage video ads"
+                count={null} 
+                link="/video-ads" 
+                icon={<PlayCircle />} 
+                loading={false} 
+                colorClass="bg-blue-500 text-blue-500"
+            />
+         </div>
       </div>
 
-      {/* Action Area */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        
-        {/* Quick Actions */}
-        <div className="xl:col-span-2 space-y-6">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Action Required</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <QuickActionCard 
-                    title="Review Withdrawals" 
-                    count={pendingWithdrawals} 
-                    link="/withdrawals" 
-                    icon={<ArrowUpRight />} 
-                    loading={loadingWithdrawals} 
-                    colorClass="bg-amber-500 text-amber-500"
-                />
-                <QuickActionCard 
-                    title="Task Submissions" 
-                    count={pendingSubmissions} 
-                    link="/tasks" 
-                    icon={<CheckSquare />} 
-                    loading={loadingSubmissions} 
-                    colorClass="bg-emerald-500 text-emerald-500"
-                />
-                <QuickActionCard 
-                    title="Task Approval Requests" 
-                    count={pendingTaskRequests} 
-                    link="/tasks" 
-                    icon={<CheckSquare />} 
-                    loading={loadingTaskRequests} 
-                    colorClass="bg-blue-500 text-blue-500"
-                />
-                <QuickActionCard 
-                    title="User Directory" 
-                    count={null} 
-                    link="/users" 
-                    icon={<Users />} 
-                    loading={false} 
-                    colorClass="bg-purple-500 text-purple-500"
-                />
-            </div>
+      {/* Stats Grid */}
+      <div>
+        <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Platform Stats</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard title="Total Users" value={userCount} icon={<Users size={24} />} loading={loadingUsers} trend="+12% this week" />
+            <StatCard title="Total Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<Wallet size={24} />} loading={loadingBalance} />
+            <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<ArrowUpRight size={24} />} loading={loadingWithdrawals} />
+            <StatCard title="Pending Tasks" value={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} icon={<CheckSquare size={24} />} loading={loadingTaskRequests || loadingSubmissions} />
+        </div>
+      </div>
 
+      {/* Charts & Feeds */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="xl:col-span-2 space-y-6">
             {/* Chart Section */}
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800">
                <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <TrendingUp size={20} className="text-emerald-500" /> User Growth
+                        <TrendingUp size={20} className="text-indigo-500" /> User Growth
                     </h2>
-                    <select className="bg-gray-50 dark:bg-slate-800 border-none text-sm rounded-lg px-3 py-1 focus:ring-2 focus:ring-emerald-500">
+                    <select className="bg-gray-50 dark:bg-slate-800 border-none text-sm rounded-lg px-3 py-1 focus:ring-2 focus:ring-indigo-500 text-gray-700 dark:text-gray-300">
                         <option>Last 7 Days</option>
                         <option>Last 30 Days</option>
                     </select>
@@ -265,37 +244,27 @@ const DashboardPage: React.FC = () => {
             </div>
         </div>
 
-        {/* Sidebar Area (Feed & AI) */}
+        {/* Sidebar Area (Feed) */}
         <div className="space-y-8">
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-6 rounded-2xl shadow-lg text-white">
-                <div className="flex items-center gap-2 mb-4">
-                    <Sparkles size={24} className="text-yellow-300" />
-                    <h2 className="text-lg font-bold">AI Insights</h2>
-                </div>
-                
-                {isReportLoading ? (
-                    <div className="flex items-center gap-2 text-emerald-100">
-                        <Spinner /> Generating insights...
-                    </div>
-                ) : aiReport ? (
-                    <div className="prose prose-sm prose-invert max-w-none bg-white/10 p-4 rounded-xl backdrop-blur-sm text-emerald-50 whitespace-pre-wrap text-xs leading-relaxed">{aiReport}</div>
-                ) : (
-                    <div className="text-center py-4">
-                        <p className="text-emerald-100 mb-4 text-sm">
-                        Get a smart summary of your platform's performance instantly.
-                        </p>
-                        <button 
-                            onClick={handleGenerateReport}
-                            className="w-full bg-white text-emerald-700 font-bold py-3 px-4 rounded-xl shadow-md hover:bg-emerald-50 transition-colors duration-200 text-sm"
-                        >
-                            Generate Report
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800">
-               <RecentActivityFeed />
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all duration-300">
+               <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-bold text-gray-800 dark:text-white">Recent Activity</h2>
+                  <button 
+                    onClick={() => setShowActivity(!showActivity)}
+                    className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-full transition-colors"
+                  >
+                     {showActivity ? (
+                         <><EyeOff size={14} /> Hide</>
+                     ) : (
+                         <><Eye size={14} /> View</>
+                     )}
+                  </button>
+               </div>
+               {showActivity && (
+                 <div className="animate-fade-in">
+                    <RecentActivityFeed />
+                 </div>
+               )}
             </div>
         </div>
        </div>
