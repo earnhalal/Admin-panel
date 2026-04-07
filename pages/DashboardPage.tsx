@@ -28,7 +28,7 @@ interface PendingRequest {
   amount: number;
   transactionId: string;
   userEmail?: string;
-  username?: string;
+  userName?: string;
 }
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean; trend?: string }> = ({ title, value, icon, loading, trend }) => (

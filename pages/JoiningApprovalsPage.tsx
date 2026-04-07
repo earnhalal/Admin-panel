@@ -12,7 +12,8 @@ interface PendingRequest {
   amount: number;
   transactionId: string;
   userEmail?: string;
-  username?: string;
+  userName?: string;
+  method?: string;
   createdAt?: number;
 }
 
@@ -83,7 +84,7 @@ const JoiningApprovalsPage: React.FC = () => {
   };
 
   const filteredRequests = requests.filter(req => 
-    req.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.transactionId?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -134,7 +135,7 @@ const JoiningApprovalsPage: React.FC = () => {
                                   <UserIcon size={20} />
                               </div>
                               <div className="overflow-hidden">
-                                  <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.username || 'Anonymous'}</h3>
+                                  <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.userName || req.userId || 'Anonymous'}</h3>
                                   <p className="text-xs text-gray-500 truncate">ID: {req.userId}</p>
                               </div>
                           </div>
@@ -143,6 +144,10 @@ const JoiningApprovalsPage: React.FC = () => {
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
                                   <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard size={14} /> Amount</span>
                                   <span className="text-sm font-bold text-green-600">Rs {req.amount}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                  <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard size={14} /> Method</span>
+                                  <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">{req.method || 'N/A'}</span>
                               </div>
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
                                   <span className="text-xs text-gray-500 flex items-center gap-1"><Calendar size={14} /> Date</span>
