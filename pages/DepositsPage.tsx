@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, updateDoc, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../services/firebase';
-import { User } from './UsersPage';
+import { rtdb } from '../services/firebase';
+import { ref, set, onValue } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { CheckIcon } from '../components/icons/CheckIcon';
@@ -9,7 +8,6 @@ import { XIcon } from '../components/icons/XIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
 import DepositApprovalModal from '../components/DepositApprovalModal';
-
 
 export interface DepositRequest {
   id: string;
@@ -21,6 +19,7 @@ export interface DepositRequest {
   method: string;
   transactionId: string;
   senderInfo?: string;
+  type?: 'activation' | 'deposit';
 }
 
 type SortConfig = { key: keyof DepositRequest; direction: 'ascending' | 'descending' } | null;
@@ -47,47 +46,24 @@ const DepositsPage: React.FC = () => {
     setLoading(true);
     setSelectedRequests(new Set());
     
-    // Capitalize the filter status to match the database value (e.g., "Pending").
-    const queryStatus = filter.charAt(0).toUpperCase() + filter.slice(1);
-
-    const q = query(collection(db, 'deposit_requests'), where('status', '==', queryStatus), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const requests: DepositRequest[] = [];
-      snapshot.docs.forEach(doc => {
-          try {
-              const data = doc.data();
-              let createdAtDate: Date;
-              
-              if (data.createdAt && typeof data.createdAt.toDate === 'function') {
-                  createdAtDate = (data.createdAt as Timestamp).toDate();
-              } else {
-                  console.warn(`Missing or invalid 'createdAt' timestamp in doc ${doc.id}`);
-                  createdAtDate = new Date(0); // Fallback to epoch
-              }
-              
-              requests.push({ 
-                  ...data,
-                  id: doc.id, 
-                  createdAt: createdAtDate
-              } as DepositRequest);
-
-          } catch (error) {
-              console.error(`Failed to process deposit document ${doc.id}:`, error);
-          }
-      });
-
-      const enrichedRequests = await Promise.all(requests.map(async req => {
-        try {
-          const userRef = doc(db, 'users', req.userId);
-          const userSnap = await getDoc(userRef);
-          return userSnap.exists() ? { ...req, userEmail: (userSnap.data() as User).email } : { ...req, userEmail: 'Unknown User' };
-        } catch (error) {
-          console.error(`Failed to enrich request ${req.id} with user data:`, error);
-          return { ...req, userEmail: 'Error fetching user' };
+    // Fetch from RTDB 'deposits'
+    const depositsRef = ref(rtdb, 'deposits');
+    const unsubscribe = onValue(depositsRef, (snapshot) => {
+        const data = snapshot.val();
+        const requests: DepositRequest[] = [];
+        if (data) {
+            Object.entries(data).forEach(([key, value]: [string, any]) => {
+                if (value.status.toLowerCase() === filter) {
+                    requests.push({ 
+                        ...value,
+                        id: key,
+                        createdAt: new Date(value.createdAt)
+                    });
+                }
+            });
         }
-      }));
-      setDeposits(enrichedRequests);
-      setLoading(false);
+        setDeposits(requests);
+        setLoading(false);
     }, (error) => {
         console.error("Error fetching deposits:", error);
         addToast('Error fetching deposits.', 'error');
@@ -145,63 +121,20 @@ const DepositsPage: React.FC = () => {
 
   const handleConfirmApprove = async (requestToApprove: DepositRequest) => {
     if (!requestToApprove) return;
-    const { id, userId, amount, transactionId } = requestToApprove;
+    const { id, userId } = requestToApprove;
     
     setActionLoading(prev => ({ ...prev, [id]: true }));
-     try {
-        // DUPLICATE TRANSACTION ID CHECK
-        const duplicateQuery = query(
-            collection(db, 'deposit_requests'),
-            where('transactionId', '==', transactionId),
-            where('status', '==', 'Approved')
-        );
-        const duplicateSnapshot = await getDocs(duplicateQuery);
-        if (!duplicateSnapshot.empty) {
-            throw new Error(`Transaction ID "${transactionId}" has already been used.`);
+    try {
+        // Update RTDB status
+        if (requestToApprove.type === 'activation') {
+            const userStatusRef = ref(rtdb, 'users/' + userId + '/status');
+            await set(userStatusRef, 'active');
         }
-
-        await runTransaction(db, async (transaction) => {
-            const settingsRef = doc(db, 'settings', 'global');
-            const settingsDoc = await transaction.get(settingsRef);
-            const depositFeeRate = settingsDoc.exists() ? (settingsDoc.data().depositFeeRate || 0) : 0;
-
-            const feeAmount = (amount * depositFeeRate) / 100;
-            const netAmount = amount - feeAmount;
-
-            const depositRef = doc(db, 'deposit_requests', id);
-            const userRef = doc(db, 'users', userId);
-            const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw new Error("User not found");
-            
-            const newBalance = (userDoc.data().balance || 0) + netAmount;
-            transaction.update(userRef, { balance: newBalance });
-            transaction.update(depositRef, { status: 'Approved' });
-            
-            // Create user-facing transaction history
-            const { createdAt, method } = requestToApprove;
-            const userTransactionData = {
-                amount,
-                createdAt: Timestamp.fromDate(createdAt),
-                status: 'Approved',
-                transactionId,
-                type: 'Deposit',
-                method,
-            };
-            transaction.set(userTransactionRef, userTransactionData, { merge: true });
-
-            if (feeAmount > 0) {
-              const revenueRef = collection(db, 'revenueTransactions');
-              transaction.set(doc(revenueRef), {
-                  adminFeeAmount: feeAmount,
-                  originalAmount: amount,
-                  sourceUser: userId,
-                  timestamp: Timestamp.now(),
-                  transactionType: 'deposit_fee',
-                  relatedDocId: id,
-              });
-            }
-        });
+        
+        // Update deposit status in RTDB
+        const depositRef = ref(rtdb, 'deposits/' + id + '/status');
+        await set(depositRef, 'Approved');
+        
         addToast('Deposit approved successfully!', 'success');
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -225,33 +158,12 @@ const DepositsPage: React.FC = () => {
     const id = reqId || requestToReject;
     if (!id) return;
 
-    const request = deposits.find(d => d.id === id);
-    if (!request) {
-        addToast('Could not find request to reject.', 'error');
-        return;
-    }
-    const { userId, amount, createdAt, method, transactionId } = request;
-
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-        await runTransaction(db, async (transaction) => {
-            const depositRef = doc(db, 'deposit_requests', id);
-            const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
-
-            // 1. Update main deposit request
-            transaction.update(depositRef, { status: 'Rejected' });
-
-            // 2. Update user's personal transaction history
-            const userTransactionData = {
-                amount,
-                createdAt: Timestamp.fromDate(createdAt),
-                status: 'Rejected',
-                transactionId,
-                type: 'Deposit',
-                method,
-            };
-            transaction.set(userTransactionRef, userTransactionData, { merge: true });
-        });
+        // Update deposit status in RTDB
+        const depositRef = ref(rtdb, 'deposits/' + id + '/status');
+        await set(depositRef, 'Rejected');
+        
         addToast('Deposit rejected.', 'success');
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";

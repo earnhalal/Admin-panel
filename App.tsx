@@ -17,6 +17,8 @@ import UserProfilePage from './pages/UserProfilePage';
 import RevenuePage from './pages/RevenuePage';
 import BoosterStorePage from './pages/BoosterStorePage';
 import VideoAdsPage from './pages/VideoAdsPage';
+import MailboxPage from './pages/MailboxPage';
+import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
 
 const App: React.FC = () => {
   return (
@@ -35,8 +37,10 @@ const App: React.FC = () => {
               <Route path="video-ads" element={<VideoAdsPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />
+              <Route path="approvals" element={<JoiningApprovalsPage />} />
               <Route path="referrals" element={<ReferralsPage />} />
               <Route path="booster-store" element={<BoosterStorePage />} />
+              <Route path="mailbox" element={<MailboxPage />} />
               <Route path="ai-automations" element={<AiAutomationsPage />} />
               <Route path="fraud-detection" element={<FraudDetectionPage />} />
               <Route path="settings" element={<SettingsPage />} />

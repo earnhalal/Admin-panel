@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, runTransaction, writeBatch } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
+import { ref, update, set } from 'firebase/database';
 import UserEditModal from '../components/UserEditModal';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
@@ -16,6 +17,8 @@ export interface User {
   phone?: string;
   balance: number;
   isPaid: boolean;
+  isActivated?: boolean;
+  status?: 'active' | 'pending' | 'blocked';
   paymentStatus: 'pending' | 'verified' | 'rejected' | 'none';
   submittedTransactionId?: string | null;
   createdAt?: any;
@@ -92,14 +95,29 @@ const UsersPage: React.FC = () => {
   const handleVerifyPayment = async (userId: string) => {
     setActionLoading(prev => ({...prev, [`verify_${userId}`]: true}));
     try {
-        await runTransaction(db, async (transaction) => {
-            const userRef = doc(db, "users", userId);
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw "User not found";
-            
-            transaction.update(userRef, { isPaid: true, paymentStatus: 'verified' });
-        });
-        addToast("Payment verified!", "success");
+        try {
+            await runTransaction(db, async (transaction) => {
+                const userRef = doc(db, "users", userId);
+                const userDoc = await transaction.get(userRef);
+                if (!userDoc.exists()) throw "User not found";
+                
+                transaction.update(userRef, { 
+                    isPaid: true, 
+                    paymentStatus: 'verified',
+                    isActivated: true,
+                    status: 'active'
+                });
+            });
+            addToast("Payment verified!", "success");
+        } catch (error) {
+            console.error("Firestore transaction failed", error);
+            addToast("Firestore update failed, but RTDB updated.", "warning");
+        }
+        
+        // Update RTDB status
+        const userStatusRef = ref(rtdb, 'users/' + userId);
+        await set(userStatusRef, { status: 'active' });
+        
     } catch(error) {
         addToast("Failed to verify payment.", "error");
     } finally {
@@ -130,7 +148,12 @@ const UsersPage: React.FC = () => {
       selectedUsers.forEach(userId => {
           const userRef = doc(db, 'users', userId);
           if (action === 'verify') {
-              batch.update(userRef, { isPaid: true, paymentStatus: 'verified' });
+              batch.update(userRef, { 
+                  isPaid: true, 
+                  paymentStatus: 'verified',
+                  isActivated: true,
+                  status: 'active'
+              });
           } else {
               batch.update(userRef, { isPaid: false, paymentStatus: 'rejected', submittedTransactionId: null });
           }

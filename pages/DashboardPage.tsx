@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
+import { ref, onValue, set, remove } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import BarChart from '../components/BarChart';
 import RecentActivityFeed from '../components/RecentActivityFeed';
+import Spinner from '../components/Spinner';
 import { Link } from 'react-router-dom';
 import { 
   Users, 
@@ -14,8 +16,20 @@ import {
   TrendingUp,
   PlayCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Check,
+  X,
+  CreditCard
 } from 'lucide-react';
+
+interface PendingRequest {
+  id: string;
+  userId: string;
+  amount: number;
+  transactionId: string;
+  userEmail?: string;
+  username?: string;
+}
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean; trend?: string }> = ({ title, value, icon, loading, trend }) => (
   <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow duration-300">
@@ -73,6 +87,11 @@ const DashboardPage: React.FC = () => {
   const [loadingTaskRequests, setLoadingTaskRequests] = useState(true);
   const [loadingBalance, setLoadingBalance] = useState(true);
 
+  // RTDB Pending Requests
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
+
   // UI States
   const [showActivity, setShowActivity] = useState(true);
 
@@ -121,13 +140,68 @@ const DashboardPage: React.FC = () => {
         setLoadingTaskRequests(false);
     });
 
+    // RTDB Listener for pending_requests
+    const pendingRef = ref(rtdb, 'pending_requests');
+    const unsubscribeRTDB = onValue(pendingRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            const requestsList = Object.entries(data).map(([key, value]: [string, any]) => ({
+                id: key,
+                userId: key,
+                ...value
+            }));
+            setPendingRequests(requestsList);
+        } else {
+            setPendingRequests([]);
+        }
+        setLoadingRequests(false);
+    }, (error) => {
+        console.error("Error fetching RTDB requests:", error);
+        setLoadingRequests(false);
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeWithdrawals();
       unsubscribeSubmissions();
       unsubscribeRequests();
+      unsubscribeRTDB();
     };
   }, []);
+
+  const handleApprove = async (request: PendingRequest) => {
+    const { userId } = request;
+    setActionLoading(prev => ({...prev, [userId]: true}));
+    try {
+        // 1. Set user status to active in RTDB
+        await set(ref(rtdb, 'users/' + userId + '/status'), 'active');
+        
+        // 2. Remove pending request from RTDB
+        await remove(ref(rtdb, 'pending_requests/' + userId));
+        
+        addToast("Request approved and account activated!", "success");
+    } catch(error) {
+        console.error(error);
+        addToast("Failed to approve request.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [userId]: false}));
+    }
+  };
+
+  const handleReject = async (request: PendingRequest) => {
+    const { userId } = request;
+    setActionLoading(prev => ({...prev, [userId]: true}));
+    try {
+        // Remove pending request from RTDB
+        await remove(ref(rtdb, 'pending_requests/' + userId));
+        addToast("Request rejected.", "success");
+    } catch (error) {
+        console.error(error);
+        addToast("Failed to reject request.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [userId]: false}));
+    }
+  };
 
   const chartData = useMemo(() => {
     const data: { [key: string]: number } = {};
@@ -176,13 +250,22 @@ const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Action Area - Moved to Top */}
+      {/* Main Action Area */}
       <div>
          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <CheckSquare className="text-indigo-500" />
             Daily Actions
          </h2>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <QuickActionCard 
+                title="Joining Approvals" 
+                description="Realtime activation requests"
+                count={pendingRequests.length} 
+                link="/approvals" 
+                icon={<CreditCard />} 
+                loading={loadingRequests} 
+                colorClass="bg-indigo-600 text-indigo-600"
+            />
             <QuickActionCard 
                 title="Withdrawals" 
                 description="Review pending payouts"
@@ -200,15 +283,6 @@ const DashboardPage: React.FC = () => {
                 icon={<CheckSquare />} 
                 loading={loadingSubmissions} 
                 colorClass="bg-indigo-500 text-indigo-500"
-            />
-            <QuickActionCard 
-                title="Ad Campaigns" 
-                description="Manage video ads"
-                count={null} 
-                link="/video-ads" 
-                icon={<PlayCircle />} 
-                loading={false} 
-                colorClass="bg-blue-500 text-blue-500"
             />
          </div>
       </div>

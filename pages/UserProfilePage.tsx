@@ -48,7 +48,7 @@ const UserProfilePage: React.FC = () => {
             }
 
             // Fetch Transactions (Deposits & Withdrawals)
-            const depositsQuery = query(collection(db, 'deposit_requests'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+            const depositsQuery = query(collection(db, 'deposits'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
             const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
             
             const processTransactions = (snapshot: any, type: 'Deposit' | 'Withdrawal'): Transaction[] => {

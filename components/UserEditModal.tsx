@@ -14,6 +14,8 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
   const [phone, setPhone] = useState('');
   const [balance, setBalance] = useState(0);
   const [withdrawalPoints, setWithdrawalPoints] = useState(0);
+  const [isActivated, setIsActivated] = useState(false);
+  const [status, setStatus] = useState<'active' | 'pending' | 'blocked'>('pending');
 
   useEffect(() => {
     if (user) {
@@ -21,12 +23,14 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
       setPhone(user.phone || '');
       setBalance(user.balance);
       setWithdrawalPoints(user.withdrawalPoints || 0);
+      setIsActivated(user.isActivated || false);
+      setStatus(user.status || 'pending');
     }
   }, [user]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({ ...user, username, phone, balance, withdrawalPoints });
+    onSave({ ...user, username, phone, balance, withdrawalPoints, isActivated, status });
   };
 
   if (!user) return null;
@@ -81,6 +85,33 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
               />
             </div>
           </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Account Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as any)}
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 leading-tight focus:outline-none focus:shadow-outline"
+              >
+                <option value="pending">Pending</option>
+                <option value="active">Active</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </div>
+            <div className="flex flex-col justify-center">
+              <label className="flex items-center cursor-pointer mt-4">
+                <input
+                  type="checkbox"
+                  checked={isActivated}
+                  onChange={(e) => setIsActivated(e.target.checked)}
+                  className="form-checkbox h-5 w-5 text-indigo-600 transition duration-150 ease-in-out"
+                />
+                <span className="ml-2 text-gray-700 dark:text-gray-300 text-sm font-bold">Is Activated</span>
+              </label>
+            </div>
+          </div>
+
           <div className="flex items-center justify-end">
             <button
               type="button"

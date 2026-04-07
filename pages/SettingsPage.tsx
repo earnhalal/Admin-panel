@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { rtdb } from '../services/firebase';
+import { ref, onValue, set } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 
 interface AppSettings {
@@ -12,6 +12,9 @@ interface AppSettings {
   depositFeeRate: number; // percentage
   withdrawalFeeRate: number; // percentage
   taskListingFee: number; // fixed amount
+  // Spin settings
+  spinCoins: number;
+  spinDailyLimit: number;
 }
 
 const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }> = ({ enabled, onChange, disabled }) => (
@@ -36,16 +39,19 @@ const SettingsPage: React.FC = () => {
         depositFeeRate: 2,
         withdrawalFeeRate: 3,
         taskListingFee: 5,
+        spinCoins: 10,
+        spinDailyLimit: 5,
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const { addToast } = useToast();
 
     useEffect(() => {
-        const settingsRef = doc(db, 'settings', 'global');
-        const unsubscribe = onSnapshot(settingsRef, (docSnap) => {
-            if (docSnap.exists()) {
-                setSettings(prev => ({ ...prev, ...docSnap.data() }));
+        const settingsRef = ref(rtdb, 'settings');
+        const unsubscribe = onValue(settingsRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                setSettings(prev => ({ ...prev, ...data }));
             }
             setLoading(false);
         });
@@ -60,8 +66,8 @@ const SettingsPage: React.FC = () => {
     const handleSaveSettings = async () => {
         setSaving(true);
         try {
-            const settingsRef = doc(db, 'settings', 'global');
-            await setDoc(settingsRef, settings, { merge: true });
+            const settingsRef = ref(rtdb, 'settings');
+            await set(settingsRef, settings);
             addToast('Settings updated successfully!', 'success');
         } catch (error) {
             console.error("Error updating settings:", error);
@@ -116,6 +122,15 @@ const SettingsPage: React.FC = () => {
                      )}
                 </div>
 
+                <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">Spin Configuration</h2>
+                     {loading ? <p>Loading settings...</p> : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                           <NumberInput label="Spin Coins" value={settings.spinCoins} onChange={val => handleSettingChange('spinCoins', val)} />
+                           <NumberInput label="Daily Spin Limit" value={settings.spinDailyLimit} onChange={val => handleSettingChange('spinDailyLimit', val)} />
+                        </div>
+                     )}
+                </div>
 
                 <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6">
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">AI Auto-Pilot</h2>

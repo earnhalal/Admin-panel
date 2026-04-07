@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, Timestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
 import { UsersIcon } from './icons/UsersIcon';
 import { WithdrawalIcon } from './icons/WithdrawalIcon';
 import { DepositIcon } from './icons/DepositIcon';
@@ -23,55 +21,9 @@ const RecentActivityFeed: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const queries = {
-            users: query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(5)),
-            withdrawals: query(collection(db, 'withdrawal_requests'), orderBy('createdAt', 'desc'), limit(5)),
-            deposits: query(collection(db, 'deposit_requests'), orderBy('createdAt', 'desc'), limit(5))
-        };
-
-        const unsubs = Object.entries(queries).map(([type, q]) => 
-            onSnapshot(q, (snapshot) => {
-                const newActivities = snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    let timestamp: Date;
-                    const dateSource = data.createdAt;
-
-                    if (dateSource && typeof dateSource.toDate === 'function') {
-                        timestamp = (dateSource as Timestamp).toDate();
-                    } else if (dateSource) {
-                        timestamp = new Date(dateSource);
-                        if (isNaN(timestamp.getTime())) {
-                            console.warn(`Invalid date format for doc ${doc.id} in RecentActivityFeed`);
-                            timestamp = new Date(0); // Fallback
-                        }
-                    } else {
-                        console.warn(`Missing date field for doc ${doc.id} in RecentActivityFeed`);
-                        timestamp = new Date(0); // Fallback
-                    }
-
-                    if (type === 'users') {
-                        return { id: doc.id, type: 'user', text: `${data.email} just signed up.`, timestamp };
-                    }
-                    if (type === 'withdrawals') {
-                        return { id: doc.id, type: 'withdrawal', text: `New withdrawal request for Rs ${data.amount}.`, timestamp };
-                    }
-                    // deposits
-                    return { id: doc.id, type: 'deposit', text: `New deposit request for Rs ${data.amount}.`, timestamp };
-                }) as ActivityItem[];
-
-                setActivities(prev => {
-                    const filteredPrev = prev.filter(p => p.type !== type);
-                    const combined = [...filteredPrev, ...newActivities];
-                    combined.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-                    return combined.slice(0, 10);
-                });
-
-                setLoading(false);
-            })
-        );
-        
-        return () => unsubs.forEach(unsub => unsub());
-
+        // Firestore calls disabled to prevent Quota Exceeded errors
+        setLoading(false);
+        return () => {};
     }, []);
     
     const timeSince = (date: Date) => {
