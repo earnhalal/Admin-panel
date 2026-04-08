@@ -19,6 +19,9 @@ import BoosterStorePage from './pages/BoosterStorePage';
 import VideoAdsPage from './pages/VideoAdsPage';
 import MailboxPage from './pages/MailboxPage';
 import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
+import PartnerProgramPage from './pages/PartnerProgramPage';
+import LotteryManagementPage from './pages/LotteryManagementPage';
+import HistoryPage from './pages/HistoryPage';
 
 const App: React.FC = () => {
   return (
@@ -38,6 +41,9 @@ const App: React.FC = () => {
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />
               <Route path="approvals" element={<JoiningApprovalsPage />} />
+              <Route path="history" element={<HistoryPage />} />
+              <Route path="lotteries" element={<LotteryManagementPage />} />
+              <Route path="partner-program" element={<PartnerProgramPage />} />
               <Route path="referrals" element={<ReferralsPage />} />
               <Route path="booster-store" element={<BoosterStorePage />} />
               <Route path="mailbox" element={<MailboxPage />} />

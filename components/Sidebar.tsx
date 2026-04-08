@@ -16,7 +16,10 @@ import {
   X,
   PlayCircle,
   Mail,
-  CreditCard
+  CreditCard,
+  Handshake,
+  Ticket,
+  History
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
@@ -109,6 +112,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           </NavLink>
           <NavLink to="/approvals" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <CreditCard size={18} className="mr-3" /> Joining Approvals
+          </NavLink>
+          <NavLink to="/history" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <History size={18} className="mr-3" /> Approvals History
+          </NavLink>
+          <NavLink to="/lotteries" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Ticket size={18} className="mr-3" /> Lotteries
+          </NavLink>
+          <NavLink to="/partner-program" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Handshake size={18} className="mr-3" /> Partner Program
           </NavLink>
           <NavLink to="/referrals" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Share2 size={18} className="mr-3" /> Referrals

@@ -57,7 +57,11 @@ const JoiningApprovalsPage: React.FC = () => {
         // 1. Set user status to active in RTDB
         await set(ref(rtdb, 'users/' + userId + '/status'), 'active');
         
-        // 2. Remove pending request from RTDB
+        // 2. Move to approved_history
+        const approvedData = { ...request, approvedAt: Date.now() };
+        await set(ref(rtdb, 'approved_history/' + userId), approvedData);
+
+        // 3. Remove pending request from RTDB
         await remove(ref(rtdb, 'pending_requests/' + userId));
         
         addToast("Account activated successfully!", "success");
@@ -73,7 +77,13 @@ const JoiningApprovalsPage: React.FC = () => {
     const { userId } = request;
     setActionLoading(prev => ({...prev, [userId]: true}));
     try {
+        // 1. Move to rejected_history
+        const rejectedData = { ...request, rejectedAt: Date.now() };
+        await set(ref(rtdb, 'rejected_history/' + userId), rejectedData);
+
+        // 2. Remove pending request from RTDB
         await remove(ref(rtdb, 'pending_requests/' + userId));
+        
         addToast("Request rejected.", "success");
     } catch (error) {
         console.error(error);
