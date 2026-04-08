@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { rtdb } from '../services/firebase';
-import { ref, onValue, set, remove } from 'firebase/database';
+import { ref, onValue, set, remove, get } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Check, X, User as UserIcon, CreditCard, Calendar, Search, ArrowLeft } from 'lucide-react';
@@ -13,6 +13,7 @@ interface PendingRequest {
   transactionId: string;
   userEmail?: string;
   userName?: string;
+  phoneNumber?: string;
   method?: string;
   createdAt?: number;
 }
@@ -51,17 +52,48 @@ const JoiningApprovalsPage: React.FC = () => {
   }, [addToast]);
 
   const handleApprove = async (request: PendingRequest) => {
-    const { userId } = request;
+    const { userId, userName } = request;
     setActionLoading(prev => ({...prev, [userId]: true}));
     try {
         // 1. Set user status to active in RTDB
         await set(ref(rtdb, 'users/' + userId + '/status'), 'active');
+        await set(ref(rtdb, 'users/' + userId + '/feeStatus'), 'paid');
         
-        // 2. Move to approved_history
+        // 2. Referral Tracking
+        const userRef = ref(rtdb, 'users/' + userId);
+        const userSnap = await get(userRef);
+        const userData = userSnap.val();
+        
+        if (userData && userData.referredBy) {
+            const referrerUid = userData.referredBy;
+            
+            // Update invite status
+            await set(ref(rtdb, `invites/${referrerUid}/history/${userId}/status`), 'paid');
+            
+            // Reward Payment
+            const rewardAmount = 100; // Assuming 100 PKR
+            const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
+            const balanceSnap = await get(balanceRef);
+            const currentBalance = balanceSnap.val() || 0;
+            await set(balanceRef, currentBalance + rewardAmount);
+            
+            // Update earnings/count
+            const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
+            const earningsSnap = await get(earningsRef);
+            const currentEarnings = earningsSnap.val() || 0;
+            await set(earningsRef, currentEarnings + rewardAmount);
+            
+            const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
+            const countSnap = await get(countRef);
+            const currentCount = countSnap.val() || 0;
+            await set(countRef, currentCount + 1);
+        }
+
+        // 3. Move to approved_history
         const approvedData = { ...request, approvedAt: Date.now() };
         await set(ref(rtdb, 'approved_history/' + userId), approvedData);
 
-        // 3. Remove pending request from RTDB
+        // 4. Remove pending request from RTDB
         await remove(ref(rtdb, 'pending_requests/' + userId));
         
         addToast("Account activated successfully!", "success");
@@ -95,7 +127,8 @@ const JoiningApprovalsPage: React.FC = () => {
 
   const filteredRequests = requests.filter(req => 
     req.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.userEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.phoneNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.transactionId?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -145,12 +178,16 @@ const JoiningApprovalsPage: React.FC = () => {
                                   <UserIcon size={20} />
                               </div>
                               <div className="overflow-hidden">
-                                  <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.userName || req.userId || 'Anonymous'}</h3>
-                                  <p className="text-xs text-gray-500 truncate">ID: {req.userId}</p>
+                                  <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.userName || 'Anonymous'}</h3>
+                                  <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">{req.userEmail || 'No Email'}</p>
                               </div>
                           </div>
                           
                           <div className="space-y-3">
+                              <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                  <span className="text-xs text-gray-500 flex items-center gap-1">Phone</span>
+                                  <span className="text-sm font-medium text-gray-900 dark:text-white">{req.phoneNumber || 'N/A'}</span>
+                              </div>
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
                                   <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard size={14} /> Amount</span>
                                   <span className="text-sm font-bold text-green-600">Rs {req.amount}</span>

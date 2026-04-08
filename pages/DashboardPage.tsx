@@ -113,13 +113,15 @@ const DashboardPage: React.FC = () => {
       setLoadingBalance(false);
     });
 
-    const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending'));
-    const unsubscribeWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
-      setPendingWithdrawals(snapshot.size);
-      setLoadingWithdrawals(false);
+    // RTDB Listener for pending_withdrawals
+    const pendingWithdrawalsRef = ref(rtdb, 'withdrawals/pending');
+    const unsubscribeWithdrawals = onValue(pendingWithdrawalsRef, (snapshot) => {
+        const data = snapshot.val();
+        setPendingWithdrawals(data ? Object.keys(data).length : 0);
+        setLoadingWithdrawals(false);
     }, (error) => {
-       console.error("Error fetching pending withdrawals:", error);
-       setLoadingWithdrawals(false);
+        console.error("Error fetching RTDB withdrawals:", error);
+        setLoadingWithdrawals(false);
     });
 
     const submissionsQuery = query(collection(db, 'userTasks'), where('status', '==', 'submitted'));

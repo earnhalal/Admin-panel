@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { ref, onValue } from 'firebase/database';
+import { db, rtdb } from '../services/firebase';
 import { BellIcon } from './icons/BellIcon';
 import { Link } from 'react-router-dom';
 
@@ -21,14 +22,13 @@ const NotificationBell: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
-        const queries = {
-            deposit: query(collection(db, 'deposits'), where('status', 'in', ['Pending', 'pending'])),
-            withdrawal: query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending')),
+        const firestoreQueries = {
+            withdrawal: query(collection(db, 'withdrawals'), where('status', 'in', ['Pending', 'pending'])),
             task: query(collection(db, 'userTasks'), where('status', '==', 'submitted')),
             referral: query(collection(db, 'referrals'), where('status', '==', 'pending_bonus'))
         };
 
-        const unsubscribes = Object.entries(queries).map(([type, q]) => {
+        const unsubscribes = Object.entries(firestoreQueries).map(([type, q]) => {
             return onSnapshot(q, (snapshot) => {
                 setNotifications(prev => {
                     const otherNotifs = prev.filter(n => n.type !== type);
@@ -40,7 +40,31 @@ const NotificationBell: React.FC = () => {
             });
         });
 
-        return () => unsubscribes.forEach(unsub => unsub());
+        // RTDB for deposits
+        const depositsRef = ref(rtdb, 'deposits');
+        const unsubscribeDeposits = onValue(depositsRef, (snapshot) => {
+            const data = snapshot.val();
+            let count = 0;
+            if (data) {
+                Object.values(data).forEach((val: any) => {
+                    if (val.status && val.status.toLowerCase() === 'pending') {
+                        count++;
+                    }
+                });
+            }
+            setNotifications(prev => {
+                const otherNotifs = prev.filter(n => n.type !== 'deposit');
+                if (count > 0) {
+                    return [...otherNotifs, { type: 'deposit', count }];
+                }
+                return otherNotifs;
+            });
+        });
+
+        return () => {
+            unsubscribes.forEach(unsub => unsub());
+            unsubscribeDeposits();
+        };
     }, []);
     
     const totalCount = notifications.reduce((acc, curr) => acc + curr.count, 0);

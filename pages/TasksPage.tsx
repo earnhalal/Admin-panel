@@ -601,15 +601,15 @@ const TasksPage: React.FC = () => {
                             <div className="bg-gray-50 dark:bg-slate-800/50 p-4 space-y-2 text-sm mt-auto border-t border-gray-100 dark:border-slate-800">
                                <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
                                     <span>Task Reward</span>
-                                    <span className="font-semibold">Rs {task.reward.toFixed(2)}</span>
+                                    <span className="font-semibold">Rs {(task.reward ?? 0).toFixed(2)}</span>
                                </div>
                                <div className="flex justify-between items-center text-gray-600 dark:text-gray-300">
                                     <span>Listing Fee</span>
-                                    <span className="font-semibold">Rs {taskListingFee.toFixed(2)}</span>
+                                    <span className="font-semibold">Rs {(taskListingFee ?? 0).toFixed(2)}</span>
                                </div>
                                <div className="flex justify-between items-center font-bold text-emerald-600 dark:text-emerald-400 pt-2 border-t border-gray-200 dark:border-slate-700">
                                     <span>Total Cost to User</span>
-                                    <span>Rs {(task.reward + taskListingFee).toFixed(2)}</span>
+                                    <span>Rs {((task.reward ?? 0) + (taskListingFee ?? 0)).toFixed(2)}</span>
                                </div>
                             </div>
                             <div className="p-4 flex gap-2">
@@ -637,7 +637,7 @@ const TasksPage: React.FC = () => {
                           <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">{task.description}</p>
                       </div>
                       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800 flex justify-between items-center">
-                          <span className="font-bold text-xl text-emerald-600 dark:text-emerald-400">Rs {task.reward.toFixed(2)}</span>
+                          <span className="font-bold text-xl text-emerald-600 dark:text-emerald-400">Rs {(task.reward ?? 0).toFixed(2)}</span>
                           <div className="flex gap-3">
                               <button onClick={() => handleToggleStatus(task)} className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800">Pause</button>
                               <button onClick={() => handleOpenModal(task)} className="text-sm font-semibold text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Edit</button>
@@ -665,7 +665,7 @@ const TasksPage: React.FC = () => {
                           {task.rejectionReason && <p className="text-xs text-rose-500 font-medium mt-2">Reason: {task.rejectionReason}</p>}
                       </div>
                       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800 flex justify-between items-center">
-                          <span className="font-bold text-xl text-gray-600 dark:text-gray-400">Rs {task.reward.toFixed(2)}</span>
+                          <span className="font-bold text-xl text-gray-600 dark:text-gray-400">Rs {(task.reward ?? 0).toFixed(2)}</span>
                           <div className="flex gap-3">
                               {task.status === 'inactive' && <button onClick={() => handleToggleStatus(task)} className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-800">Activate</button>}
                               <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700">Delete</button>

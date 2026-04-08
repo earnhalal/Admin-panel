@@ -1,26 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, runTransaction, getDoc, Timestamp, writeBatch } from 'firebase/firestore';
-import { db } from '../services/firebase';
-import { User } from './UsersPage';
+import React, { useState, useEffect } from 'react';
+import { RefreshCcw } from 'lucide-react';
+import { ref, onValue, remove, update, set, get } from 'firebase/database';
+import { rtdb } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import TransactionIdModal from '../components/TransactionIdModal';
 import { CheckIcon } from '../components/icons/CheckIcon';
 import { XIcon } from '../components/icons/XIcon';
-import Pagination from '../components/Pagination';
-import Checkbox from '../components/Checkbox';
 import RejectionModal from '../components/RejectionModal';
 
-// Interfaces...
 interface WithdrawalRequest {
   id: string;
   userId: string;
   amount: number;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'Pending' | 'Approved' | 'Rejected';
-  createdAt: Timestamp;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number;
   userEmail?: string;
   username?: string;
-  transactionId?: string;
   withdrawalDetails: {
     method: string;
     accountName: string;
@@ -30,20 +26,11 @@ interface WithdrawalRequest {
   rejectionReason?: string;
 }
 
-type SortConfig = { key: keyof WithdrawalRequest; direction: 'ascending' | 'descending' } | null;
-
 const WithdrawalsPage: React.FC = () => {
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
   const { addToast } = useToast();
-  
-  // New state for advanced features
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
-  const ITEMS_PER_PAGE = 10;
   
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectionPayload, setRejectionPayload] = useState<WithdrawalRequest | null>(null);
@@ -53,183 +40,50 @@ const WithdrawalsPage: React.FC = () => {
 
   useEffect(() => {
     setLoading(true);
-    setSelectedRequests(new Set());
+    const pendingRef = ref(rtdb, 'withdrawals/pending');
     
-    // Capitalize the filter status to match the database value (e.g., "Pending").
-    const queryStatus = filter.charAt(0).toUpperCase() + filter.slice(1);
-    
-    const q = query(
-        collection(db, 'withdrawal_requests'), 
-        where('status', '==', queryStatus) // Use the capitalized status for the query.
-    );
-    
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-        const processedRequests: WithdrawalRequest[] = [];
+    const unsubscribe = onValue(pendingRef, (snapshot) => {
+        const data = snapshot.val();
+        const allRequests: WithdrawalRequest[] = [];
         
-        snapshot.docs.forEach(doc => {
-            try {
-                const data = doc.data();
-
-                // Ensure createdAt field exists and is a valid Timestamp
-                if (!data.createdAt || typeof data.createdAt.toDate !== 'function') {
-                    console.warn(`Missing or invalid 'createdAt' timestamp in doc ${doc.id}`);
-                    data.createdAt = Timestamp.fromDate(new Date(0)); // Fallback to epoch
-                }
-                
-                processedRequests.push({ 
-                    ...data,
-                    id: doc.id, 
-                } as WithdrawalRequest);
-
-            } catch (error) {
-                console.error(`Failed to process withdrawal document ${doc.id}:`, error);
-                // This ensures one bad document doesn't stop others from rendering
-            }
-        });
-
-        const enrichedRequests = await Promise.all(processedRequests.map(async req => {
-            try {
-                const userRef = doc(db, 'users', req.userId);
-                const userSnap = await getDoc(userRef);
-                if (userSnap.exists()) {
-                    const userData = userSnap.data() as User;
-                    return { ...req, userEmail: userData.email, username: userData.username };
-                }
-                return { ...req, userEmail: 'Unknown User', username: 'N/A' };
-            } catch (error) {
-                 console.error(`Failed to enrich request ${req.id} with user data:`, error);
-                 return { ...req, userEmail: 'Error fetching user', username: 'Error' };
-            }
-        }));
-
-        setWithdrawals(enrichedRequests);
+        if (data) {
+            // Nested structure: withdrawals/pending/{userId}/{requestId}
+            Object.entries(data).forEach(([userId, requests]: [string, any]) => {
+                Object.entries(requests).forEach(([requestId, requestData]: [string, any]) => {
+                    allRequests.push({ ...requestData, id: requestId, userId } as WithdrawalRequest);
+                });
+            });
+        }
+        
+        setWithdrawals(allRequests);
         setLoading(false);
     }, (error) => {
         console.error("Error fetching withdrawals:", error);
-        addToast("Error fetching withdrawals.", 'error');
+        addToast(`Error fetching withdrawals: ${error.message}`, 'error');
         setLoading(false);
     });
     return () => unsubscribe();
-  }, [filter, addToast]);
+  }, [addToast]);
 
-  const sortedWithdrawals = useMemo(() => {
-    let sortableItems = [...withdrawals];
-    if (sortConfig !== null) {
-      sortableItems.sort((a, b) => {
-        let aValue = a[sortConfig.key];
-        let bValue = b[sortConfig.key];
-
-        // Handle Firestore Timestamps for sorting
-        if (aValue instanceof Timestamp && bValue instanceof Timestamp) {
-            aValue = aValue.toMillis();
-            bValue = bValue.toMillis();
-        }
-
-        if (aValue === undefined || aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
-        if (bValue === undefined || aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
-        return 0;
-      });
-    }
-    return sortableItems;
-  }, [withdrawals, sortConfig]);
-
-  const paginatedWithdrawals = useMemo(() => {
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    return sortedWithdrawals.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  }, [sortedWithdrawals, currentPage]);
-
-  const requestSort = (key: keyof WithdrawalRequest) => {
-    let direction: 'ascending' | 'descending' = 'ascending';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const handleSelectRequest = (id: string) => {
-      setSelectedRequests(prev => {
-          const newSet = new Set(prev);
-          if (newSet.has(id)) newSet.delete(id);
-          else newSet.add(id);
-          return newSet;
-      });
-  };
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.checked) {
-          setSelectedRequests(new Set(paginatedWithdrawals.map(r => r.id)));
-      } else {
-          setSelectedRequests(new Set());
-      }
-  };
-
-
-  const openApprovalModal = (request: WithdrawalRequest) => {
-    setApprovalPayload(request);
-    setIsTxnModalOpen(true);
-  };
-  
   const handleConfirmApproval = async (enteredTransactionId: string) => {
     if (!approvalPayload) return;
-    const { id, userId, amount } = approvalPayload;
+    const { id, userId } = approvalPayload;
 
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-      await runTransaction(db, async (transaction) => {
-          const settingsRef = doc(db, 'settings', 'global');
-          const settingsDoc = await transaction.get(settingsRef);
-          const withdrawalFeeRate = settingsDoc.exists() ? (settingsDoc.data().withdrawalFeeRate || 0) : 0;
-          
-          const feeAmount = (amount * withdrawalFeeRate) / 100;
-          
-          const withdrawalRef = doc(db, 'withdrawal_requests', id);
-          const userRef = doc(db, 'users', userId);
-          // CRITICAL: Define reference to the user's personal transaction history record
-          const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
-          
-          const userDoc = await transaction.get(userRef);
-          
-          if (!userDoc.exists()) throw new Error("User not found.");
-          if (userDoc.data().balance < amount) throw new Error("Insufficient balance.");
-          
-          const newBalance = userDoc.data().balance - amount;
-          
-          // 1. Update user balance
-          transaction.update(userRef, { balance: newBalance });
-
-          // 2. Update main withdrawal request
-          transaction.update(withdrawalRef, { status: 'Approved', transactionId: enteredTransactionId });
-
-          // 3. CRITICAL: Update the user's personal transaction history for their app to see
-          const { createdAt, withdrawalDetails } = approvalPayload;
-          const userTransactionData = {
-              amount,
-              createdAt,
-              withdrawalDetails,
-              status: 'Approved',
-              transactionId: enteredTransactionId,
-              type: 'Withdrawal',
-          };
-          transaction.set(userTransactionRef, userTransactionData, { merge: true });
-
-          // 4. Record revenue from the fee, if any
-          if (feeAmount > 0) {
-              const revenueRef = collection(db, 'revenueTransactions');
-              transaction.set(doc(revenueRef), {
-                  adminFeeAmount: feeAmount,
-                  originalAmount: amount,
-                  sourceUser: userId,
-                  timestamp: Timestamp.now(),
-                  transactionType: 'withdrawal_fee',
-                  relatedDocId: id,
-              });
-          }
+      // Move to approved
+      await set(ref(rtdb, `withdrawals/approved/${userId}/${id}`), {
+          ...approvalPayload,
+          status: 'approved',
+          transactionId: enteredTransactionId
       });
+      // Remove from pending
+      await remove(ref(rtdb, `withdrawals/pending/${userId}/${id}`));
+      
       addToast('Withdrawal approved successfully!', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : "An unknown error occurred.";
       addToast(`Failed to approve withdrawal: ${message}`, 'error');
-      console.error('Approval failed:', error);
     } finally {
       setActionLoading(prev => ({ ...prev, [id]: false }));
       setIsTxnModalOpen(false);
@@ -237,47 +91,27 @@ const WithdrawalsPage: React.FC = () => {
     }
   };
   
-  const openRejectModal = (request: WithdrawalRequest) => {
-    setRejectionPayload(request);
-    setIsRejectModalOpen(true);
-  };
-
   const handleReject = async (reason: string) => {
     if (!rejectionPayload) return;
     const { id, userId, amount } = rejectionPayload;
 
     setActionLoading(prev => ({...prev, [id]: true}));
     try {
-        await runTransaction(db, async (transaction) => {
-            const withdrawalRef = doc(db, 'withdrawal_requests', id);
-            // CRITICAL: Define reference to the user's personal transaction history record
-            const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
-            const userRef = doc(db, 'users', userId);
-
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) {
-                throw new Error("User not found to return funds to.");
-            }
-            
-            // 1. Return funds to user's balance
-            const newBalance = userDoc.data().balance + amount;
-            transaction.update(userRef, { balance: newBalance });
-
-            // 2. Update main withdrawal request
-            transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason: reason });
-
-            // 3. CRITICAL: Update user's personal transaction history for their app to see
-            const { createdAt, withdrawalDetails } = rejectionPayload;
-            const userTransactionData = {
-                amount,
-                createdAt,
-                withdrawalDetails,
-                status: 'Rejected',
-                rejectionReason: reason,
-                type: 'Withdrawal',
-            };
-            transaction.set(userTransactionRef, userTransactionData, { merge: true });
+        // Move to rejected
+        await set(ref(rtdb, `withdrawals/rejected/${userId}/${id}`), {
+            ...rejectionPayload,
+            status: 'rejected',
+            rejectionReason: reason
         });
+        // Remove from pending
+        await remove(ref(rtdb, `withdrawals/pending/${userId}/${id}`));
+        
+        // Return funds
+        const balanceRef = ref(rtdb, `users/${userId}/balance`);
+        const balanceSnap = await get(balanceRef);
+        const currentBalance = balanceSnap.val() || 0;
+        await set(balanceRef, currentBalance + amount);
+        
         addToast('Withdrawal rejected and funds returned.', 'success');
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -288,176 +122,28 @@ const WithdrawalsPage: React.FC = () => {
         setRejectionPayload(null);
     }
   };
-  
-  const handleBulkReject = async () => {
-    if (selectedRequests.size === 0) return;
-    setActionLoading(prev => ({ ...prev, bulkReject: true }));
-
-    const rejectionReason = 'Bulk rejected by admin.';
-    const promises: Promise<void>[] = [];
-
-    for (const reqId of selectedRequests) {
-        const request = withdrawals.find(w => w.id === reqId);
-        if (request) {
-            const promise = runTransaction(db, async (transaction) => {
-                const { id, userId, amount } = request;
-                const withdrawalRef = doc(db, 'withdrawal_requests', id);
-                const userRef = doc(db, 'users', userId);
-                const userTransactionRef = doc(db, 'users', userId, 'transactions', id);
-
-                const userDoc = await transaction.get(userRef);
-                if (!userDoc.exists()) {
-                    console.error(`User ${userId} not found for bulk rejection of ${id}`);
-                    return; 
-                }
-
-                // 1. Return funds
-                const newBalance = userDoc.data().balance + amount;
-                transaction.update(userRef, { balance: newBalance });
-
-                // 2. Update main request
-                transaction.update(withdrawalRef, { status: 'Rejected', rejectionReason });
-
-                // 3. CRITICAL: Update user's personal transaction history
-                const { createdAt, withdrawalDetails } = request;
-                const userTransactionData = {
-                    amount, createdAt, withdrawalDetails, status: 'Rejected', rejectionReason, type: 'Withdrawal',
-                };
-                transaction.set(userTransactionRef, userTransactionData, { merge: true });
-            }).catch(err => {
-                console.error(`Failed to reject request ${reqId} in bulk:`, err);
-                throw new Error(`Failed to process request ${reqId}`);
-            });
-            promises.push(promise);
-        }
-    }
-
-    try {
-        await Promise.all(promises);
-        addToast(`${selectedRequests.size} requests rejected and funds returned.`, 'success');
-        setSelectedRequests(new Set());
-    } catch (error) {
-        addToast('One or more requests failed during bulk rejection.', 'error');
-    } finally {
-        setActionLoading(prev => ({ ...prev, bulkReject: false }));
-    }
-  };
-
 
   return (
-    <div className="container mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Withdrawal Requests</h1>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {(['pending', 'approved', 'rejected'] as const).map(status => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`capitalize px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-              filter === status
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700'
-            }`}
-          >
-            {status}
-          </button>
-        ))}
-      </div>
-
-      {filter === 'pending' && selectedRequests.size > 0 && (
-          <div className="mb-4 bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg flex items-center justify-between">
-              <span className="text-sm font-medium text-indigo-800 dark:text-indigo-200">{selectedRequests.size} request(s) selected</span>
-              <div className="flex gap-2">
-                  <button onClick={handleBulkReject} className="px-3 py-1 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-700" disabled={actionLoading.bulkReject}>Reject Selected</button>
-              </div>
-          </div>
-      )}
-      
-      {loading ? ( <div className="text-center mt-10">Loading...</div> ) : paginatedWithdrawals.length === 0 ? (
-        <p className="text-center py-10 text-gray-500 dark:text-gray-400">No {filter} requests found.</p>
-      ) : (
-        <>
-            {/* Desktop Table */}
-            <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden hidden md:block">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full leading-normal">
-                    <thead>
-                        <tr>
-                        {filter === 'pending' && (
-                            <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                            <Checkbox
-                                checked={selectedRequests.size === paginatedWithdrawals.length && paginatedWithdrawals.length > 0}
-                                onChange={handleSelectAll}
-                                indeterminate={selectedRequests.size > 0 && selectedRequests.size < paginatedWithdrawals.length}
-                            />
-                            </th>
-                        )}
-                        <th className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User & Details</th>
-                        <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                        <th onClick={() => requestSort('createdAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
-                        {filter !== 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Details</th>}
-                        {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {paginatedWithdrawals.map((req) => (
-                        <tr key={req.id}>
-                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">
-                                <p className="font-semibold">{req.username || 'N/A'}</p>
-                                <p className="text-xs text-gray-500">{req.userEmail || 'N/A'}</p>
-                                <p className="text-xs text-gray-500 mt-1">{req.withdrawalDetails?.method || 'N/A'}: {req.withdrawalDetails?.accountNumber || 'N/A'}</p>
-                                <p className="text-xs text-gray-500">{req.withdrawalDetails?.accountName || 'N/A'} {req.withdrawalDetails?.bankName ? `(${req.withdrawalDetails.bankName})` : ''}</p>
-                            </td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>Rs {req.amount.toFixed(2)}</p></td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p>{req.createdAt.toDate().getTime() === 0 ? 'Date unavailable' : req.createdAt.toDate().toLocaleString()}</p></td>
-                            {filter !== 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><p className="break-all">{req.transactionId || 'N/A'}</p>{req.rejectionReason && <p className="text-red-500 text-xs mt-1">Reason: {req.rejectionReason}</p>}</td>}
-                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectModal(req)} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
-                        </tr>
-                        ))}
-                    </tbody>
-                    </table>
-                </div>
-                <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedWithdrawals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
-            </div>
-
-            {/* Mobile Cards */}
-            <div className="md:hidden space-y-4">
-                {paginatedWithdrawals.map(req => (
-                    <div key={req.id} className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-4">
-                        <div className="flex justify-between items-start">
-                             <div>
-                                <p className="font-bold text-lg text-gray-900 dark:text-white">Rs {req.amount.toFixed(2)}</p>
-                                <p className="font-semibold text-sm text-gray-700 dark:text-gray-300">{req.username || 'N/A'}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail || 'N/A'}</p>
-                            </div>
-                            {filter === 'pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
-                        </div>
-                        <div className="mt-4 text-sm space-y-1">
-                            <p><span className="font-semibold">Method:</span> {req.withdrawalDetails?.method || 'N/A'}</p>
-                            <p><span className="font-semibold">Account:</span> {req.withdrawalDetails?.accountNumber || 'N/A'}</p>
-                            <p><span className="font-semibold">Name:</span> {req.withdrawalDetails?.accountName || 'N/A'}</p>
-                            {req.withdrawalDetails?.bankName && <p><span className="font-semibold">Bank:</span> {req.withdrawalDetails.bankName}</p>}
-                            <p className="text-xs text-gray-400 pt-1">{req.createdAt.toDate().getTime() === 0 ? 'Date unavailable' : req.createdAt.toDate().toLocaleString()}</p>
-                        </div>
-                         {filter !== 'pending' && (
-                            <div className="mt-2 text-sm">
-                                {req.transactionId && <p><span className="font-semibold">Txn ID:</span> <span className="break-all">{req.transactionId}</span></p>}
-                                {req.rejectionReason && <p><span className="font-semibold text-red-500">Reason:</span> {req.rejectionReason}</p>}
-                            </div>
-                         )}
-                        {filter === 'pending' && (
-                            <div className="mt-4 flex justify-end gap-2">
-                                <button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
-                                <button onClick={() => openRejectModal(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
-                            </div>
-                        )}
+    <div className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">Withdrawal Requests</h1>
+      {loading ? <Spinner /> : (
+        <div className="space-y-4">
+            {withdrawals.map(req => (
+                <div key={req.id} className="bg-white p-4 rounded shadow flex justify-between items-center">
+                    <div>
+                        <p className="font-bold">User: {req.username || 'N/A'}</p>
+                        <p className="font-bold">Amount: Rs {(req.amount ?? 0).toFixed(2)}</p>
+                        <p className="text-sm text-gray-600">Method: {req.withdrawalDetails?.method}</p>
+                        <p className="text-sm text-gray-600">Account: {req.withdrawalDetails?.accountName} - {req.withdrawalDetails?.accountNumber}</p>
                     </div>
-                ))}
-                 <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedWithdrawals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
-            </div>
-        </>
+                    <div className="flex gap-2">
+                        <button onClick={() => { setApprovalPayload(req); setIsTxnModalOpen(true); }} className="p-2 bg-green-100 rounded-full"><CheckIcon className="w-4 h-4 text-green-600"/></button>
+                        <button onClick={() => { setRejectionPayload(req); setIsRejectModalOpen(true); }} className="p-2 bg-red-100 rounded-full"><XIcon className="w-4 h-4 text-red-600" /></button>
+                    </div>
+                </div>
+            ))}
+        </div>
       )}
-
       <RejectionModal isOpen={isRejectModalOpen} onClose={() => setIsRejectModalOpen(false)} onConfirm={handleReject} title="Reject Withdrawal" isLoading={rejectionPayload ? actionLoading[rejectionPayload.id] : false} />
       <TransactionIdModal isOpen={isTxnModalOpen} onClose={() => setIsTxnModalOpen(false)} onConfirm={handleConfirmApproval} isLoading={approvalPayload ? actionLoading[approvalPayload.id] : false} />
     </div>

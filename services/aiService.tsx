@@ -1,26 +1,8 @@
+import { GoogleGenAI } from "@google/genai";
 import { User } from '../pages/UsersPage';
 import { Task, TaskType } from '../pages/TasksPage';
 
-// Using any because the type is from a dynamic import.
-// The AI client will be initialized on first use, not on module load.
-let ai: any;
-let genaiTypes: any;
-
-const getAiClient = async () => {
-  if (!ai) {
-    // Dynamically import the module using its full CDN URL to ensure the build tool
-    // treats it as an external resource and doesn't try to resolve it locally.
-    const genaiModule = await import('https://aistudiocdn.com/google-genai@0.17.0');
-    const { GoogleGenAI } = genaiModule;
-    genaiTypes = genaiModule;
-    
-    // Assume process.env.API_KEY is available in the execution environment
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-  }
-  return ai;
-};
-
-const model = 'gemini-2.5-flash';
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export const decideReferralApproval = async (referredUser: User): Promise<'APPROVE' | 'REJECT' | 'ERROR'> => {
   try {
@@ -32,10 +14,9 @@ export const decideReferralApproval = async (referredUser: User): Promise<'APPRO
     
     Based on this information, should the bonus be approved? Respond with only the word 'APPROVE' or 'REJECT'.`;
 
-    const aiClient = await getAiClient();
-    const response = await aiClient.models.generateContent({
-        model: model,
-        contents: prompt,
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt
     });
     
     const decision = response.text.trim().toUpperCase();
@@ -72,12 +53,11 @@ export const decideTaskApproval = async (submission: { userEmail?: string, taskT
       
       Based on the policy of default approval for this task type, should this submission be approved? Respond with only the word 'APPROVE'.`;
   
-      const aiClient = await getAiClient();
-      const response = await aiClient.models.generateContent({
-        model: model,
-        contents: prompt,
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
       });
-
+      
       const decision = response.text.trim().toUpperCase();
   
       if (decision.includes('APPROVE')) {
@@ -111,25 +91,12 @@ export const decideWithdrawalRequest = async (user: User, request: { amount: num
         
         Decision: Should this be REJECTED automatically due to high suspicion, or should it be left for manual APPROVE? Respond in JSON format with a 'decision' ('REJECT' or 'APPROVE') and a brief 'reason'.`;
 
-        const aiClient = await getAiClient();
-        const { Type } = genaiTypes;
-        const response = await aiClient.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        decision: { type: Type.STRING },
-                        reason: { type: Type.STRING }
-                    },
-                    required: ["decision", "reason"]
-                }
-            }
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt
         });
-
-        const jsonText = response.text.trim();
+        
+        const jsonText = response.text.trim().replace(/```json|```/g, "");
         const parsed = JSON.parse(jsonText);
         
         if (parsed.decision === 'REJECT') {
@@ -146,12 +113,9 @@ export const decideWithdrawalRequest = async (user: User, request: { amount: num
 
 export const generateTaskWithAi = async (prompt: string): Promise<{ title: string; description: string; reward: number; taskType?: TaskType; taskUrl?: string; }> => {
     try {
-        const aiClient = await getAiClient();
-        const { Type } = genaiTypes;
-
-        const response = await aiClient.models.generateContent({
-            model: model,
-            contents: `You are an expert task creator for a micro-task platform in Pakistan. Based on the user's request, create a concise, clear, and engaging task. 
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `You are an expert task creator for a micro-task platform in Pakistan. Based on the user's request, create a concise, clear, and engaging task. 
             
             1.  Provide a title, a detailed step-by-step description, and a fair reward in Pakistani Rupees (Rs).
             2.  Analyze the prompt to determine the platform. If it's YouTube, Instagram, Facebook, a general website, or something else, set 'taskType' to one of: 'youtube', 'instagram', 'facebook', 'website', 'other'. If no platform is mentioned, omit 'taskType'.
@@ -159,24 +123,10 @@ export const generateTaskWithAi = async (prompt: string): Promise<{ title: strin
             
             User Request: "${prompt}"
             
-            Generate the task details in JSON format.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING, description: "A short, catchy title for the task." },
-                        description: { type: Type.STRING, description: "A detailed, step-by-step guide for the user to complete the task." },
-                        reward: { type: Type.NUMBER, description: "A fair and reasonable reward amount in Pakistani Rupees (Rs)." },
-                        taskType: { type: Type.STRING, description: "The type of task, e.g., 'youtube', 'instagram'. Optional." },
-                        taskUrl: { type: Type.STRING, description: "A placeholder URL for the task. Optional." }
-                    },
-                    required: ["title", "description", "reward"]
-                }
-            }
+            Generate the task details in JSON format with fields: title, description, reward, taskType (optional), taskUrl (optional).`
         });
         
-        const jsonText = response.text.trim();
+        const jsonText = response.text.trim().replace(/```json|```/g, "");
         const parsedJson = JSON.parse(jsonText);
 
         if (typeof parsedJson.title === 'string' && typeof parsedJson.description === 'string' && typeof parsedJson.reward === 'number') {
@@ -203,10 +153,9 @@ export const generateSmartReport = async (stats: any): Promise<string> => {
         
         Generate the report.`;
 
-        const aiClient = await getAiClient();
-        const response = await aiClient.models.generateContent({
-            model: model,
-            contents: prompt,
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt
         });
         
         return response.text.trim();
@@ -224,9 +173,6 @@ export interface SuspiciousUser {
 
 export const runFraudDetection = async (users: User[]): Promise<SuspiciousUser[]> => {
     try {
-        const aiClient = await getAiClient();
-        const { Type } = genaiTypes;
-        
         const userData = users.map(u => ({
             id: u.id,
             email: u.email,
@@ -238,27 +184,12 @@ export const runFraudDetection = async (users: User[]): Promise<SuspiciousUser[]
         User Data: ${JSON.stringify(userData)}
         `;
 
-        const response = await aiClient.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            userId: { type: Type.STRING },
-                            email: { type: Type.STRING },
-                            reason: { type: Type.STRING }
-                        },
-                        required: ["userId", "email", "reason"]
-                    }
-                }
-            }
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt
         });
-
-        const jsonText = response.text.trim();
+        
+        const jsonText = response.text.trim().replace(/```json|```/g, "");
         const parsedJson = JSON.parse(jsonText);
 
         if (Array.isArray(parsedJson)) {
@@ -290,25 +221,12 @@ export const decideTaskCreationRequest = async (task: Omit<Task, 'id' | 'status'
 
         Respond in JSON format with a 'decision' ('APPROVE' or 'REJECT') and a brief 'reason' for your decision.`;
         
-        const aiClient = await getAiClient();
-        const { Type } = genaiTypes;
-        const response = await aiClient.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        decision: { type: Type.STRING },
-                        reason: { type: Type.STRING }
-                    },
-                    required: ["decision", "reason"]
-                }
-            }
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt
         });
-
-        const jsonText = response.text.trim();
+        
+        const jsonText = response.text.trim().replace(/```json|```/g, "");
         const parsed = JSON.parse(jsonText);
         
         if (parsed.decision === 'APPROVE' || parsed.decision === 'REJECT') {

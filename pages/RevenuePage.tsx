@@ -99,10 +99,10 @@ const RevenuePage: React.FC = () => {
         <div className="container mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Revenue Dashboard</h1>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Total Revenue" value={`Rs ${revenueStats.total.toFixed(2)}`} icon={<RevenueIcon className="w-6 h-6 text-indigo-500" />} />
-                <StatCard title="From Deposits" value={`Rs ${revenueStats.depositFees.toFixed(2)}`} icon={<DepositIcon className="w-6 h-6 text-indigo-500" />} />
-                <StatCard title="From Withdrawals" value={`Rs ${revenueStats.withdrawalFees.toFixed(2)}`} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} />
-                <StatCard title="From Tasks" value={`Rs ${(revenueStats.taskCommissions + revenueStats.listingFees).toFixed(2)}`} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} />
+                <StatCard title="Total Revenue" value={`Rs ${(revenueStats.total ?? 0).toFixed(2)}`} icon={<RevenueIcon className="w-6 h-6 text-indigo-500" />} />
+                <StatCard title="From Deposits" value={`Rs ${(revenueStats.depositFees ?? 0).toFixed(2)}`} icon={<DepositIcon className="w-6 h-6 text-indigo-500" />} />
+                <StatCard title="From Withdrawals" value={`Rs ${(revenueStats.withdrawalFees ?? 0).toFixed(2)}`} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} />
+                <StatCard title="From Tasks" value={`Rs {((revenueStats.taskCommissions ?? 0) + (revenueStats.listingFees ?? 0)).toFixed(2)}`} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} />
             </div>
 
             <div className="mt-8 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
@@ -132,8 +132,8 @@ const RevenuePage: React.FC = () => {
                                         <tr key={tx.id}>
                                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{tx.timestamp.toDate().toLocaleString()}</td>
                                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{formatType(tx.transactionType)}</td>
-                                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm font-semibold text-green-600">Rs {tx.adminFeeAmount.toFixed(2)}</td>
-                                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {tx.originalAmount.toFixed(2)}</td>
+                                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm font-semibold text-green-600">Rs {(tx.adminFeeAmount ?? 0).toFixed(2)}</td>
+                                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {(tx.originalAmount ?? 0).toFixed(2)}</td>
                                             <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm text-gray-500">{tx.sourceUser}</td>
                                         </tr>
                                     ))}

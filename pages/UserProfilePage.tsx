@@ -49,7 +49,7 @@ const UserProfilePage: React.FC = () => {
 
             // Fetch Transactions (Deposits & Withdrawals)
             const depositsQuery = query(collection(db, 'deposits'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
-            const withdrawalsQuery = query(collection(db, 'withdrawal_requests'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+            const withdrawalsQuery = query(collection(db, 'withdrawals'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
             
             const processTransactions = (snapshot: any, type: 'Deposit' | 'Withdrawal'): Transaction[] => {
                 return snapshot.docs.map((d: any) => {
@@ -148,7 +148,7 @@ const UserProfilePage: React.FC = () => {
                     </div>
                     <div className="text-right">
                         <p className="text-gray-500 dark:text-gray-400">Current Balance</p>
-                        <p className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {user.balance.toFixed(2)}</p>
+                        <p className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {(user.balance ?? 0).toFixed(2)}</p>
                     </div>
                  </div>
             </div>

@@ -305,7 +305,7 @@ const UsersPage: React.FC = () => {
                   </Link>
                 </td>
                 <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
-                  Rs {user.balance.toFixed(2)}
+                  Rs {(user.balance ?? 0).toFixed(2)}
                 </td>
                 <td className="px-6 py-4">
                   <PaymentStatusBadge status={user.paymentStatus} />
@@ -361,7 +361,7 @@ const UsersPage: React.FC = () => {
                   
                   <div className="flex justify-between items-center py-2 border-t border-gray-50 dark:border-slate-800">
                       <span className="text-sm text-gray-500">Balance</span>
-                      <span className="font-bold text-gray-900 dark:text-white">Rs {user.balance.toFixed(2)}</span>
+                      <span className="font-bold text-gray-900 dark:text-white">Rs {(user.balance ?? 0).toFixed(2)}</span>
                   </div>
 
                   <div className="flex gap-2 mt-3">

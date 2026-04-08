@@ -212,7 +212,7 @@ const AiAutomationsPage: React.FC = () => {
         setWithdrawalStats({ processed: 0, kept_pending: 0, rejected: 0, failed: 0 });
 
         try {
-            const q = query(collection(db, 'withdrawal_requests'), where('status', '==', 'pending'));
+            const q = query(collection(db, 'withdrawals'), where('status', 'in', ['Pending', 'pending']));
             const snapshot = await getDocs(q);
             const pending = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WithdrawalRequest));
 
@@ -239,7 +239,7 @@ const AiAutomationsPage: React.FC = () => {
 
                 if (decision === 'REJECT') {
                     await runTransaction(db, async (transaction) => {
-                        const withdrawalRef = doc(db, 'withdrawal_requests', request.id);
+                        const withdrawalRef = doc(db, 'withdrawals', request.id);
                         const userRef = doc(db, 'users', request.userId);
                         const newBalance = user.balance + request.amount;
                         transaction.update(userRef, { balance: newBalance });
@@ -271,10 +271,10 @@ const AiAutomationsPage: React.FC = () => {
             const userCount = usersSnap.size;
             const totalBalance = usersSnap.docs.reduce((acc, doc) => acc + (doc.data().balance || 0), 0);
             
-            const withdrawSnap = await getDocs(query(collection(db, 'withdrawal_requests'), where('status', '==', 'Pending')));
+            const withdrawSnap = await getDocs(query(collection(db, 'withdrawals'), where('status', 'in', ['Pending', 'pending'])));
             const pendingWithdrawals = withdrawSnap.size;
 
-            const approvedWithdrawalsSnap = await getDocs(query(collection(db, 'withdrawal_requests'), where('status', '==', 'Approved')));
+            const approvedWithdrawalsSnap = await getDocs(query(collection(db, 'withdrawals'), where('status', 'in', ['Approved', 'approved'])));
             const totalWithdrawn = approvedWithdrawalsSnap.docs.reduce((acc, doc) => acc + (doc.data().amount || 0), 0);
 
             const submissionsSnap = await getDocs(query(collection(db, 'userTasks'), where('status', '==', 'submitted')));

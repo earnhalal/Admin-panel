@@ -10,6 +10,8 @@ interface HistoryRequest {
   id: string;
   userId: string;
   userName?: string;
+  userEmail?: string;
+  phoneNumber?: string;
   amount?: number;
   transactionId?: string;
   method?: string;
@@ -119,7 +121,8 @@ const HistoryPage: React.FC = () => {
   
   const filteredRequests = currentRequests.filter(req => 
     req.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.userEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.phoneNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.transactionId?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -199,12 +202,16 @@ const HistoryPage: React.FC = () => {
                                   <UserIcon size={20} />
                               </div>
                               <div className="overflow-hidden">
-                                  <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.userName || req.userId || 'Anonymous'}</h3>
-                                  <p className="text-xs text-gray-500 truncate">ID: {req.userId}</p>
+                                  <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.userName || 'Anonymous'}</h3>
+                                  <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">{req.userEmail || 'No Email'}</p>
                               </div>
                           </div>
                           
                           <div className="space-y-3">
+                              <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                  <span className="text-xs text-gray-500 flex items-center gap-1">Phone</span>
+                                  <span className="text-sm font-medium text-gray-900 dark:text-white">{req.phoneNumber || 'N/A'}</span>
+                              </div>
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
                                   <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard size={14} /> Amount</span>
                                   <span className="text-sm font-bold text-green-600">Rs {req.amount}</span>

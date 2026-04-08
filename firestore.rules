@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - email: string (required)
+    //   - username: string (required)
+    //   - balance: number (required)
+    //   - paymentStatus: string (required) - e.g., 'pending', 'verified'
+    //   - role: string (required) - e.g., 'user', 'admin'
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: withdrawals
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required)
+    //   - amount: number (required)
+    //   - status: string (required) - e.g., 'pending', 'approved', 'rejected'
+    //   - method: string (required)
+    //   - accountDetails: string (required)
+    //   - createdAt: timestamp (required)
+    //   - processedAt: timestamp (optional)
+    //   - transactionId: string (optional)
+    //
+    // Collection: userTasks
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required)
+    //   - taskId: string (required)
+    //   - status: string (required) - e.g., 'submitted', 'approved', 'rejected'
+    //   - proof: string (optional)
+    //   - submittedAt: timestamp (required)
+    //
+    // Collection: referrals
+    // Document ID: auto-generated
+    // Fields:
+    //   - referrerId: string (required)
+    //   - referredId: string (required)
+    //   - status: string (required) - e.g., 'pending_bonus', 'bonus_paid'
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: tasks
+    // Document ID: auto-generated
+    // Fields:
+    //   - title: string (required)
+    //   - description: string (required)
+    //   - reward: number (required)
+    //   - status: string (required) - e.g., 'active', 'pending'
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: lotteries
+    // Document ID: auto-generated
+    // Fields:
+    //   - entryFee: number (required)
+    //   - prizePool: number (required)
+    //   - maxMembers: number (required)
+    //   - currentMembers: number (required)
+    //   - status: string (required) - e.g., 'active', 'closed'
+    //   - colorTheme: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "r83842009@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'username', 'balance', 'role', 'createdAt']) &&
+             data.email is string && data.email.size() < 100 &&
+             data.username is string && data.username.size() < 50 &&
+             data.balance is number &&
+             data.role in ['user', 'admin'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidWithdrawal(data) {
+      return data.keys().hasAll(['userId', 'amount', 'status', 'method', 'accountDetails', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.amount is number && data.amount > 0 &&
+             data.status == 'pending' &&
+             data.method is string &&
+             data.accountDetails is string && data.accountDetails.size() < 500 &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['username', 'photoURL']));
+    }
+
+    match /withdrawals/{requestId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidWithdrawal(request.resource.data);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /userTasks/{submissionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+    }
+
+    match /referrals/{referralId} {
+      allow read: if isAdmin() || (isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid));
+      allow create: if isAuthenticated() && request.resource.data.referredId == request.auth.uid;
+      allow update: if isAdmin();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /lotteries/{lotteryId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentMembers']));
+    }
+
+    match /revenue_transactions/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+    }
+
+    match /withdraw_fees/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+    }
+
+    match /deposits/{id} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+    }
+  }
+}
