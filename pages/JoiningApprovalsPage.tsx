@@ -28,14 +28,20 @@ const JoiningApprovalsPage: React.FC = () => {
 
   useEffect(() => {
     const pendingRef = ref(rtdb, 'pending_requests');
-    const unsubscribe = onValue(pendingRef, (snapshot) => {
+    const unsubscribe = onValue(pendingRef, async (snapshot) => {
         const data = snapshot.val();
         console.log('RTDB Data:', data);
         if (data) {
-            const requestsList = Object.entries(data).map(([key, value]: [string, any]) => ({
-                id: key,
-                userId: key,
-                ...value
+            const requestsList = await Promise.all(Object.entries(data).map(async ([key, value]: [string, any]) => {
+                const userRef = ref(rtdb, 'users/' + key + '/username');
+                const userSnap = await get(userRef);
+                const userName = userSnap.val() || value.userName || 'Anonymous';
+                return {
+                    id: key,
+                    userId: key,
+                    ...value,
+                    userName
+                };
             }));
             setRequests(requestsList);
         } else {
