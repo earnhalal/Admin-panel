@@ -230,7 +230,6 @@ const BoosterStorePage: React.FC = () => {
                                 <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">Rs {booster.price.toFixed(2)}</span>
                                 <div className="flex gap-2">
                                     <button onClick={() => { setSelectedBooster(booster); setIsModalOpen(true); }} className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:underline">Edit</button>
-                                    <button onClick={() => { setBoosterToDelete(booster.id); setIsDeleteConfirmOpen(true); }} className="text-sm font-medium text-red-500 dark:text-red-400 hover:underline">Delete</button>
                                 </div>
                             </div>
                         </div>

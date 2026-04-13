@@ -19,7 +19,8 @@ import {
   EyeOff,
   Check,
   X,
-  CreditCard
+  CreditCard,
+  ArrowDownToLine
 } from 'lucide-react';
 
 interface PendingRequest {
@@ -94,33 +95,60 @@ const DashboardPage: React.FC = () => {
 
   // UI States
   const [showActivity, setShowActivity] = useState(true);
+  const [pendingDeposits, setPendingDeposits] = useState<number | null>(null);
+  const [loadingDeposits, setLoadingDeposits] = useState(true);
 
   const { addToast } = useToast();
 
   useEffect(() => {
-    const usersQuery = query(collection(db, 'users'));
-    const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
-      setUserCount(snapshot.size);
-      const usersData = snapshot.docs.map(doc => doc.data() as { balance?: number, createdAt: Timestamp });
-      const total = usersData.reduce((acc, user) => acc + (user.balance || 0), 0);
-      setAllUsers(usersData);
-      setTotalBalance(total);
-      setLoadingUsers(false);
-      setLoadingBalance(false);
+    // Firestore Listener for pending deposits (excluding activation/joining fee types)
+    const depositsQuery = query(
+        collection(db, 'deposits'), 
+        where('status', 'in', ['pending', 'Pending']),
+        where('type', '!=', 'activation')
+    );
+    const unsubscribeDeposits = onSnapshot(depositsQuery, (snapshot) => {
+        setPendingDeposits(snapshot.size);
+        setLoadingDeposits(false);
     }, (error) => {
-      console.error("Error fetching user data:", error);
-      setLoadingUsers(false);
-      setLoadingBalance(false);
+        console.error("Error fetching pending deposits:", error);
+        setLoadingDeposits(false);
+    });
+    // RTDB Listener for users (for balance and chart)
+    const usersRef = ref(rtdb, 'users');
+    const unsubscribeUsers = onValue(usersRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            const usersList = Object.entries(data).map(([id, value]: [string, any]) => ({
+                id,
+                ...value,
+                createdAt: value.createdAt ? { toDate: () => new Date(value.createdAt) } : null
+            }));
+            const total = usersList.reduce((acc, user) => acc + (Number(user.balance) || 0), 0);
+            setAllUsers(usersList as any);
+            setTotalBalance(total);
+            setUserCount(usersList.length); // Use RTDB count as source of truth
+            setLoadingUsers(false);
+        } else {
+            setAllUsers([]);
+            setTotalBalance(0);
+            setUserCount(0);
+            setLoadingUsers(false);
+        }
+        setLoadingBalance(false);
+    }, (error) => {
+        console.error("Error fetching RTDB user data:", error);
+        setLoadingBalance(false);
+        setLoadingUsers(false);
     });
 
-    // RTDB Listener for pending_withdrawals
-    const pendingWithdrawalsRef = ref(rtdb, 'withdrawals/pending');
-    const unsubscribeWithdrawals = onValue(pendingWithdrawalsRef, (snapshot) => {
-        const data = snapshot.val();
-        setPendingWithdrawals(data ? Object.keys(data).length : 0);
+    // Firestore Listener for pending withdrawals
+    const withdrawalsQuery = query(collection(db, 'withdrawals'), where('status', 'in', ['pending', 'Pending']));
+    const unsubscribeWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
+        setPendingWithdrawals(snapshot.size);
         setLoadingWithdrawals(false);
     }, (error) => {
-        console.error("Error fetching RTDB withdrawals:", error);
+        console.error("Error fetching Firestore withdrawals:", error);
         setLoadingWithdrawals(false);
     });
 
@@ -168,6 +196,7 @@ const DashboardPage: React.FC = () => {
       unsubscribeSubmissions();
       unsubscribeRequests();
       unsubscribeRTDB();
+      unsubscribeDeposits();
     };
   }, []);
 
@@ -259,6 +288,15 @@ const DashboardPage: React.FC = () => {
             Daily Actions
          </h2>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <QuickActionCard 
+                title="Deposits" 
+                description="Wallet top-up requests"
+                count={pendingDeposits} 
+                link="/deposits" 
+                icon={<ArrowDownToLine />} 
+                loading={loadingDeposits} 
+                colorClass="bg-green-600 text-green-600"
+            />
             <QuickActionCard 
                 title="Joining Approvals" 
                 description="Realtime activation requests"

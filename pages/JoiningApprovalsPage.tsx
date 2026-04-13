@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { rtdb } from '../services/firebase';
-import { ref, onValue, set, remove, get } from 'firebase/database';
+import { db, rtdb } from '../services/firebase';
+import { ref, onValue, set, remove, get, update } from 'firebase/database';
+import { doc, updateDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Check, X, User as UserIcon, CreditCard, Calendar, Search, ArrowLeft } from 'lucide-react';
@@ -27,63 +28,137 @@ const JoiningApprovalsPage: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    setLoading(true);
+    
+    // 1. Listen to RTDB for pending_requests
     const pendingRef = ref(rtdb, 'pending_requests');
-    const unsubscribe = onValue(pendingRef, async (snapshot) => {
+    const unsubRTDB = onValue(pendingRef, async (snapshot) => {
         const data = snapshot.val();
-        console.log('RTDB Data:', data);
+        const rtdbList: PendingRequest[] = [];
         if (data) {
-            const requestsList = await Promise.all(Object.entries(data).map(async ([key, value]: [string, any]) => {
-                const userRef = ref(rtdb, 'users/' + key + '/username');
+            const promises = Object.entries(data).map(async ([key, value]: [string, any]) => {
+                const userRef = ref(rtdb, 'users/' + key);
                 const userSnap = await get(userRef);
-                const userName = userSnap.val() || value.userName || 'Anonymous';
+                const userData = userSnap.val() || {};
                 return {
                     id: key,
                     userId: key,
                     ...value,
-                    userName
-                };
-            }));
-            setRequests(requestsList);
-        } else {
-            setRequests([]);
+                    userName: userData.username || userData.name || userData.displayName || value.userName || 'Anonymous',
+                    createdAt: value.createdAt || userData.createdAt || null,
+                    source: 'rtdb'
+                } as PendingRequest;
+            });
+            rtdbList.push(...await Promise.all(promises));
         }
-        setLoading(false);
-    }, (error) => {
-        console.error("RTDB Error:", error);
-        addToast("Failed to load requests from Realtime Database.", "error");
+        setRequests(prev => {
+            const firestoreOnly = prev.filter(r => (r as any).source === 'firestore');
+            return [...rtdbList, ...firestoreOnly];
+        });
         setLoading(false);
     });
 
-    return () => unsubscribe();
+    // 2. Listen to Firestore for deposits with type 'activation'
+    const depositsRef = collection(db, 'deposits');
+    const q = query(depositsRef, where('type', '==', 'activation'));
+    
+    const unsubFirestore = onSnapshot(q, async (snapshot) => {
+        const fsList: PendingRequest[] = [];
+        const userIds = new Set<string>();
+        
+        // Filter status client-side to avoid composite index requirement
+        const pendingDocs = snapshot.docs.filter(doc => {
+            const status = (doc.data().status || '').toLowerCase();
+            return status === 'pending';
+        });
+
+        pendingDocs.forEach(doc => {
+            if (doc.data().userId) userIds.add(doc.data().userId);
+        });
+
+        const userMap: {[key: string]: any} = {};
+        if (userIds.size > 0) {
+            const userPromises = Array.from(userIds).map(uid => get(ref(rtdb, `users/${uid}`)));
+            const userSnaps = await Promise.all(userPromises);
+            userSnaps.forEach((snap, idx) => {
+                userMap[Array.from(userIds)[idx]] = snap.val() || {};
+            });
+        }
+
+        pendingDocs.forEach(doc => {
+            const data = doc.data();
+            const userData = userMap[data.userId] || {};
+            fsList.push({
+                id: doc.id,
+                userId: data.userId,
+                amount: data.amount,
+                transactionId: data.transactionId || data.txnId || 'N/A',
+                userEmail: userData.email || data.userEmail || 'N/A',
+                userName: userData.username || userData.name || data.userName || 'Anonymous',
+                phoneNumber: userData.phoneNumber || data.phoneNumber || 'N/A',
+                method: data.method || data.paymentMethod || 'N/A',
+                createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : data.createdAt,
+                source: 'firestore'
+            } as any);
+        });
+
+        setRequests(prev => {
+            const rtdbOnly = prev.filter(r => (r as any).source === 'rtdb');
+            return [...rtdbOnly, ...fsList];
+        });
+    });
+
+    return () => {
+        unsubRTDB();
+        unsubFirestore();
+    };
   }, [addToast]);
 
   const handleApprove = async (request: PendingRequest) => {
-    const { userId, userName } = request;
-    setActionLoading(prev => ({...prev, [userId]: true}));
+    const { userId, id } = request;
+    const isFirestore = (request as any).source === 'firestore';
+    setActionLoading(prev => ({...prev, [id]: true}));
     try {
-        // 1. Set user status to active in RTDB
-        await set(ref(rtdb, 'users/' + userId + '/status'), 'active');
-        await set(ref(rtdb, 'users/' + userId + '/feeStatus'), 'paid');
+        // 1. Update status in RTDB
+        const userRtdbRef = ref(rtdb, 'users/' + userId);
+        await update(userRtdbRef, {
+            status: 'active',
+            feeStatus: 'paid',
+            isActivated: true,
+            isPaid: true,
+            paymentStatus: 'verified'
+        });
         
-        // 2. Referral Tracking
-        const userRef = ref(rtdb, 'users/' + userId);
-        const userSnap = await get(userRef);
+        // 2. Update Firestore if exists
+        try {
+            const userFsRef = doc(db, 'users', userId);
+            await updateDoc(userFsRef, {
+                status: 'active',
+                isActivated: true,
+                isPaid: true,
+                paymentStatus: 'verified'
+            });
+        } catch (e) {}
+
+        // 3. Referral Tracking
+        const userSnap = await get(userRtdbRef);
         const userData = userSnap.val();
         
         if (userData && userData.referredBy) {
             const referrerUid = userData.referredBy;
+            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { status: 'paid' });
             
-            // Update invite status
-            await set(ref(rtdb, `invites/${referrerUid}/history/${userId}/status`), 'paid');
-            
-            // Reward Payment
-            const rewardAmount = 100; // Assuming 100 PKR
+            const rewardAmount = 100;
             const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
             const balanceSnap = await get(balanceRef);
             const currentBalance = balanceSnap.val() || 0;
-            await set(balanceRef, currentBalance + rewardAmount);
+            const newBalance = currentBalance + rewardAmount;
+            await set(balanceRef, newBalance);
+
+            try {
+                await updateDoc(doc(db, 'users', referrerUid), { balance: newBalance });
+            } catch (e) {}
             
-            // Update earnings/count
             const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
             const earningsSnap = await get(earningsRef);
             const currentEarnings = earningsSnap.val() || 0;
@@ -95,39 +170,44 @@ const JoiningApprovalsPage: React.FC = () => {
             await set(countRef, currentCount + 1);
         }
 
-        // 3. Move to approved_history
+        // 4. Move to approved_history
         const approvedData = { ...request, approvedAt: Date.now() };
-        await set(ref(rtdb, 'approved_history/' + userId), approvedData);
+        await set(ref(rtdb, 'approved_history/' + id), approvedData);
 
-        // 4. Remove pending request from RTDB
-        await remove(ref(rtdb, 'pending_requests/' + userId));
+        // 5. Remove from source
+        if (isFirestore) {
+            await updateDoc(doc(db, 'deposits', id), { status: 'approved', approvedAt: Timestamp.now() });
+        } else {
+            await remove(ref(rtdb, 'pending_requests/' + id));
+        }
         
         addToast("Account activated successfully!", "success");
     } catch(error) {
-        console.error(error);
         addToast("Failed to approve account.", "error");
     } finally {
-        setActionLoading(prev => ({...prev, [userId]: false}));
+        setActionLoading(prev => ({...prev, [id]: false}));
     }
   };
 
   const handleReject = async (request: PendingRequest) => {
-    const { userId } = request;
-    setActionLoading(prev => ({...prev, [userId]: true}));
+    const { id } = request;
+    const isFirestore = (request as any).source === 'firestore';
+    setActionLoading(prev => ({...prev, [id]: true}));
     try {
-        // 1. Move to rejected_history
         const rejectedData = { ...request, rejectedAt: Date.now() };
-        await set(ref(rtdb, 'rejected_history/' + userId), rejectedData);
+        await set(ref(rtdb, 'rejected_history/' + id), rejectedData);
 
-        // 2. Remove pending request from RTDB
-        await remove(ref(rtdb, 'pending_requests/' + userId));
+        if (isFirestore) {
+            await updateDoc(doc(db, 'deposits', id), { status: 'rejected', rejectedAt: Timestamp.now() });
+        } else {
+            await remove(ref(rtdb, 'pending_requests/' + id));
+        }
         
         addToast("Request rejected.", "success");
     } catch (error) {
-        console.error(error);
         addToast("Failed to reject request.", "error");
     } finally {
-        setActionLoading(prev => ({...prev, [userId]: false}));
+        setActionLoading(prev => ({...prev, [id]: false}));
     }
   };
 
@@ -205,7 +285,7 @@ const JoiningApprovalsPage: React.FC = () => {
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
                                   <span className="text-xs text-gray-500 flex items-center gap-1"><Calendar size={14} /> Date</span>
                                   <span className="text-sm text-gray-700 dark:text-gray-300">
-                                      {req.createdAt ? new Date(req.createdAt).toLocaleDateString() : 'N/A'}
+                                      {req.createdAt ? new Date(req.createdAt).toLocaleString() : 'N/A'}
                                   </span>
                               </div>
                               <div className="pt-2">

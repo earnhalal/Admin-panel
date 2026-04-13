@@ -1,21 +1,34 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { rtdb } from '../services/firebase';
-import { ref, set, onValue } from 'firebase/database';
+import { db, rtdb } from '../services/firebase';
+import { collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, orderBy, Timestamp } from 'firebase/firestore';
+import { ref, set as setRtdb, get as getRtdb } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { CheckIcon } from '../components/icons/CheckIcon';
-import { XIcon } from '../components/icons/XIcon';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
 import DepositApprovalModal from '../components/DepositApprovalModal';
+import Spinner from '../components/Spinner';
+import { 
+  Check, 
+  X, 
+  Search, 
+  ArrowLeft, 
+  ArrowDownToLine, 
+  User as UserIcon, 
+  Calendar, 
+  CreditCard,
+  Filter
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export interface DepositRequest {
   id: string;
   userId: string;
   amount: number;
   status: 'pending' | 'approved' | 'rejected' | 'Pending' | 'Approved' | 'Rejected';
-  createdAt: Date;
+  createdAt: any;
   userEmail?: string;
+  userName?: string;
   method: string;
   transactionId: string;
   senderInfo?: string;
@@ -28,8 +41,10 @@ const DepositsPage: React.FC = () => {
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
   const { addToast } = useToast();
+  const navigate = useNavigate();
 
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,43 +61,90 @@ const DepositsPage: React.FC = () => {
     setLoading(true);
     setSelectedRequests(new Set());
     
-    // Fetch from RTDB 'deposits'
-    const depositsRef = ref(rtdb, 'deposits');
-    const unsubscribe = onValue(depositsRef, (snapshot) => {
-        const data = snapshot.val();
+    // Fetch from Firestore 'deposits'
+    const depositsRef = collection(db, 'deposits');
+    
+    const unsubscribe = onSnapshot(depositsRef, async (snapshot) => {
         const requests: DepositRequest[] = [];
-        if (data) {
-            Object.entries(data).forEach(([key, value]: [string, any]) => {
-                if (value.status.toLowerCase() === filter) {
-                    requests.push({ 
-                        ...value,
-                        id: key,
-                        createdAt: new Date(value.createdAt)
-                    });
-                }
+        
+        // We might need to fetch user names if they aren't in the deposit doc
+        const userIds = new Set<string>();
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.userId) userIds.add(data.userId);
+        });
+
+        // Fetch user data from RTDB for names
+        const userMap: {[key: string]: any} = {};
+        if (userIds.size > 0) {
+            const userPromises = Array.from(userIds).map(uid => getRtdb(ref(rtdb, `users/${uid}`)));
+            const userSnaps = await Promise.all(userPromises);
+            userSnaps.forEach((snap, idx) => {
+                userMap[Array.from(userIds)[idx]] = snap.val() || {};
             });
         }
+
+        snapshot.docs.forEach((doc) => {
+            const data = doc.data();
+            // Flexible status check
+            const rawStatus = data.status || data.Status || 'pending';
+            const status = rawStatus.toLowerCase();
+            
+            // Filter out 'activation' type deposits as they belong in Joining Approvals
+            const type = data.type || 'deposit';
+            if (status === filter && type !== 'activation') {
+                const userData = userMap[data.userId] || {};
+                const name = userData.username || userData.userName || userData.name || userData.displayName || data.userName || data.username || 'Anonymous';
+                const email = userData.email || data.userEmail || data.email || 'N/A';
+                
+                requests.push({ 
+                    ...data,
+                    id: doc.id,
+                    userName: name,
+                    userEmail: email,
+                    createdAt: data.createdAt || data.timestamp || data.date || null,
+                    method: data.method || data.paymentMethod || data.gateway || 'N/A',
+                    transactionId: data.transactionId || data.txnId || data.transactionID || 'N/A',
+                    amount: Number(data.amount) || 0
+                } as DepositRequest);
+            }
+        });
         setDeposits(requests);
         setLoading(false);
     }, (error) => {
         console.error("Error fetching deposits:", error);
-        addToast('Error fetching deposits.', 'error');
+        addToast('Error fetching deposits from Firestore.', 'error');
         setLoading(false);
     });
     return () => unsubscribe();
   }, [filter, addToast]);
 
+  const filteredDeposits = useMemo(() => {
+    return deposits.filter(req => 
+      req.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      req.userEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      req.transactionId?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [deposits, searchTerm]);
+
   const sortedDeposits = useMemo(() => {
-      let sortableItems = [...deposits];
+      let sortableItems = [...filteredDeposits];
       if(sortConfig) {
           sortableItems.sort((a,b) => {
-              if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
-              if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
+              let aVal = a[sortConfig.key];
+              let bVal = b[sortConfig.key];
+              
+              // Handle Firestore Timestamps
+              if (aVal instanceof Timestamp) aVal = aVal.toMillis();
+              if (bVal instanceof Timestamp) bVal = bVal.toMillis();
+              
+              if (aVal < bVal) return sortConfig.direction === 'ascending' ? -1 : 1;
+              if (aVal > bVal) return sortConfig.direction === 'ascending' ? 1 : -1;
               return 0;
           });
       }
       return sortableItems;
-  }, [deposits, sortConfig]);
+  }, [filteredDeposits, sortConfig]);
 
   const paginatedDeposits = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -121,21 +183,30 @@ const DepositsPage: React.FC = () => {
 
   const handleConfirmApprove = async (requestToApprove: DepositRequest) => {
     if (!requestToApprove) return;
-    const { id, userId } = requestToApprove;
+    const { id, userId, amount } = requestToApprove;
     
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-        // Update RTDB status
+        // 1. Update user balance in RTDB
+        const balanceRef = ref(rtdb, `users/${userId}/balance`);
+        const balanceSnap = await getRtdb(balanceRef);
+        const currentBalance = balanceSnap.val() || 0;
+        await setRtdb(balanceRef, currentBalance + amount);
+
+        // 2. If activation type, update status
         if (requestToApprove.type === 'activation') {
-            const userStatusRef = ref(rtdb, 'users/' + userId + '/status');
-            await set(userStatusRef, 'active');
+            await setRtdb(ref(rtdb, 'users/' + userId + '/status'), 'active');
+            await setRtdb(ref(rtdb, 'users/' + userId + '/feeStatus'), 'paid');
         }
         
-        // Update deposit status in RTDB
-        const depositRef = ref(rtdb, 'deposits/' + id + '/status');
-        await set(depositRef, 'Approved');
+        // 3. Update deposit status in Firestore
+        const depositRef = doc(db, 'deposits', id);
+        await updateDoc(depositRef, {
+            status: 'Approved',
+            approvedAt: Timestamp.now()
+        });
         
-        addToast('Deposit approved successfully!', 'success');
+        addToast('Deposit approved and balance updated!', 'success');
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";
         addToast(`Failed to approve deposit: ${message}`, 'error');
@@ -160,9 +231,12 @@ const DepositsPage: React.FC = () => {
 
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-        // Update deposit status in RTDB
-        const depositRef = ref(rtdb, 'deposits/' + id + '/status');
-        await set(depositRef, 'Rejected');
+        // Update deposit status in Firestore
+        const depositRef = doc(db, 'deposits', id);
+        await updateDoc(depositRef, {
+            status: 'Rejected',
+            rejectedAt: Timestamp.now()
+        });
         
         addToast('Deposit rejected.', 'success');
     } catch (error) {
@@ -202,102 +276,148 @@ const DepositsPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Deposit Requests</h1>
-      
-      <div className="mb-4 flex flex-wrap gap-2">
-         {(['pending', 'approved', 'rejected'] as const).map(status => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`capitalize px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-              filter === status
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700'
-            }`}
-          >
-            {status}
-          </button>
-        ))}
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={() => navigate(-1)}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-gray-500"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <ArrowDownToLine className="text-indigo-500" /> Deposit Requests
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Manage user wallet top-ups (Firestore)</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-grow">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search by Name, Email or Transaction ID..."
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+        </div>
+        <div className="relative min-w-[180px]">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <select
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 appearance-none outline-none"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as any)}
+            >
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+            </select>
+        </div>
       </div>
       
        {filter === 'pending' && selectedRequests.size > 0 && (
-          <div className="mb-4 bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg flex items-center justify-between">
-              <span className="text-sm font-medium text-indigo-800 dark:text-indigo-200">{selectedRequests.size} request(s) selected</span>
-              <div className="flex gap-2">
-                  <button onClick={() => handleBulkAction('approve')} className="px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700" disabled={actionLoading.bulk}>Approve</button>
-                  <button onClick={() => handleBulkAction('reject')} className="px-3 py-1 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-700" disabled={actionLoading.bulk}>Reject</button>
+          <div className="bg-indigo-50 dark:bg-indigo-900/20 px-4 py-3 rounded-xl border border-indigo-100 dark:border-indigo-800 flex items-center justify-between">
+              <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{selectedRequests.size} Selected</span>
+              <div className="flex gap-3">
+                  <button onClick={() => handleBulkAction('approve')} className="px-4 py-1.5 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm" disabled={actionLoading.bulk}>Approve All</button>
+                  <button onClick={() => handleBulkAction('reject')} className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-colors shadow-sm" disabled={actionLoading.bulk}>Reject All</button>
               </div>
           </div>
       )}
 
-      {loading ? <p className="text-center py-10">Loading...</p> : paginatedDeposits.length === 0 ? <p className="text-center py-10 text-gray-500">No {filter} requests found.</p> : (
-        <>
-            {/* Desktop Table */}
-            <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden hidden md:block">
-                <div className="overflow-x-auto">
-                <table className="min-w-full leading-normal">
-                    <thead>
-                    <tr>
-                        {filter === 'pending' && (
-                        <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                            <Checkbox
-                            checked={selectedRequests.size === paginatedDeposits.length && paginatedDeposits.length > 0}
-                            onChange={handleSelectAll}
-                            indeterminate={selectedRequests.size > 0 && selectedRequests.size < paginatedDeposits.length}
-                            />
-                        </th>
-                        )}
-                        <th onClick={() => requestSort('userEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">User</th>
-                        <th onClick={() => requestSort('amount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                        <th onClick={() => requestSort('createdAt')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Date</th>
-                        <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Transaction ID</th>
-                        {filter === 'pending' && <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>}
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {paginatedDeposits.map((req) => (
-                        <tr key={req.id}>
-                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} /></td>}
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.userEmail}</td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {req.amount.toFixed(2)}</td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{req.createdAt.getTime() === 0 ? 'Date unavailable' : req.createdAt.toLocaleString()}</td>
-                            <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm break-all">{req.transactionId || 'N/A'}</td>
-                            {filter === 'pending' && <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>}
-                        </tr>
-                    ))}
-                    </tbody>
-                </table>
-                </div>
-                <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedDeposits.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
+      {loading ? (
+        <div className="flex justify-center items-center min-h-[400px]"><Spinner /></div>
+      ) : paginatedDeposits.length === 0 ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 text-center border border-gray-100 dark:border-slate-800">
+            <div className="w-16 h-16 bg-gray-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ArrowDownToLine className="w-8 h-8 text-gray-400" />
             </div>
-
-            {/* Mobile Cards */}
-            <div className="md:hidden space-y-4">
-                {paginatedDeposits.map(req => (
-                    <div key={req.id} className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-4">
-                         <div className="flex justify-between items-start">
-                             <div>
-                                <p className="font-bold text-lg text-gray-900 dark:text-white">Rs {req.amount.toFixed(2)}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{req.userEmail}</p>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">No {filter} requests</h3>
+            <p className="text-gray-500 dark:text-gray-400">There are no {filter} deposit requests at the moment.</p>
+        </div>
+      ) : (
+        <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {paginatedDeposits.map((req) => (
+                    <div key={req.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+                        <div className="p-6 flex-grow">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                                        <UserIcon size={20} />
+                                    </div>
+                                    <div className="overflow-hidden">
+                                        <h3 className="font-bold text-gray-900 dark:text-white truncate">{req.userName || 'Anonymous'}</h3>
+                                        <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">{req.userEmail || 'No Email'}</p>
+                                    </div>
+                                </div>
+                                {filter === 'pending' && (
+                                    <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />
+                                )}
                             </div>
-                            {filter === 'pending' && <Checkbox checked={selectedRequests.has(req.id)} onChange={() => handleSelectRequest(req.id)} />}
+                            
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                    <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard size={14} /> Amount</span>
+                                    <span className="text-sm font-bold text-green-600">Rs {(req.amount ?? 0).toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                    <span className="text-xs text-gray-500 flex items-center gap-1">Method</span>
+                                    <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">{req.method || 'N/A'}</span>
+                                </div>
+                                {req.senderInfo && (
+                                    <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                        <span className="text-xs text-gray-500 flex items-center gap-1">Sender</span>
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[150px]">{req.senderInfo}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
+                                    <span className="text-xs text-gray-500 flex items-center gap-1"><Calendar size={14} /> Date</span>
+                                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                                        {req.createdAt ? (req.createdAt instanceof Timestamp ? req.createdAt.toDate().toLocaleString() : new Date(req.createdAt).toLocaleString()) : 'N/A'}
+                                    </span>
+                                </div>
+                                <div className="pt-2">
+                                    <span className="text-xs text-gray-500 block mb-1">Transaction ID</span>
+                                    <div className="bg-gray-50 dark:bg-slate-800 p-2 rounded-lg text-xs font-mono text-gray-700 dark:text-gray-300 break-all border border-gray-100 dark:border-slate-700">
+                                        {req.transactionId || 'No ID provided'}
+                                    </div>
+                                </div>
+                                {req.type && (
+                                    <div className="mt-2 text-center">
+                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${req.type === 'activation' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30'}`}>
+                                            {req.type}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="mt-4 text-sm space-y-1">
-                            <p><span className="font-semibold">Txn ID:</span> <span className="break-all">{req.transactionId}</span></p>
-                            <p><span className="font-semibold">Method:</span> {req.method}</p>
-                            {req.senderInfo && <p><span className="font-semibold">Sender:</span> {req.senderInfo}</p>}
-                            <p className="text-xs text-gray-400 pt-1">{req.createdAt.getTime() === 0 ? 'Date unavailable' : req.createdAt.toLocaleString()}</p>
-                        </div>
+                        
                         {filter === 'pending' && (
-                            <div className="mt-4 flex justify-end gap-2">
-                                <button onClick={() => openApprovalModal(req)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
-                                <button onClick={() => openRejectConfirm(req.id)} disabled={actionLoading[req.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
+                            <div className="p-4 bg-gray-50 dark:bg-slate-800/50 border-t border-gray-100 dark:border-slate-800 flex gap-3">
+                                <button 
+                                    onClick={() => openRejectConfirm(req.id)}
+                                    disabled={actionLoading[req.id]}
+                                    className="flex-1 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-sm font-bold hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {actionLoading[req.id] ? <Spinner size="sm" /> : <><X size={16} /> Reject</>}
+                                </button>
+                                <button 
+                                    onClick={() => openApprovalModal(req)}
+                                    disabled={actionLoading[req.id]}
+                                    className="flex-1 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
+                                >
+                                    {actionLoading[req.id] ? <Spinner size="sm" /> : <><Check size={16} /> Approve</>}
+                                </button>
                             </div>
                         )}
                     </div>
                 ))}
-                 <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedDeposits.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
+            </div>
+            <div className="mt-8">
+                <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedDeposits.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage}/>
             </div>
         </>
       )}

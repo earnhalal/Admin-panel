@@ -19,7 +19,9 @@ import {
   CreditCard,
   Handshake,
   Ticket,
-  History
+  History,
+  Megaphone,
+  Globe
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
@@ -85,6 +87,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <CheckSquare size={18} className="mr-3" /> Tasks
           </NavLink>
+          <NavLink to="/promotions" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Megaphone size={18} className="mr-3" /> Promotions
+          </NavLink>
+          <NavLink to="/promotion-orders" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Megaphone size={18} className="mr-3" /> Promotion Orders
+          </NavLink>
+          <NavLink to="/promotion-requests" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Megaphone size={18} className="mr-3" /> Promotion Submissions
+          </NavLink>
+          <NavLink to="/social-tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Globe size={18} className="mr-3" /> Social Tasks
+          </NavLink>
           <NavLink to="/video-ads" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <PlayCircle size={18} className="mr-3" /> Video Ads
           </NavLink>
@@ -100,9 +114,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           
            <NavLink to="/revenue" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <DollarSign size={18} className="mr-3" /> Revenue
-          </NavLink>
-          <NavLink to="/booster-store" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Store size={18} className="mr-3" /> Booster Store
           </NavLink>
           <NavLink to="/mailbox" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Mail size={18} className="mr-3" /> Mailbox
@@ -122,17 +133,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/partner-program" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Handshake size={18} className="mr-3" /> Partner Program
           </NavLink>
-          <NavLink to="/referrals" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Share2 size={18} className="mr-3" /> Referrals
-          </NavLink>
           <NavLink to="/referral-report" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Share2 size={18} className="mr-3" /> Referral Report
-          </NavLink>
-          <NavLink to="/ai-automations" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Bot size={18} className="mr-3" /> AI Automations
-          </NavLink>
-          <NavLink to="/fraud-detection" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <ShieldAlert size={18} className="mr-3" /> Fraud Detection
           </NavLink>
           <NavLink to="/settings" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Settings size={18} className="mr-3" /> Settings

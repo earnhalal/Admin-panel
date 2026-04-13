@@ -641,7 +641,6 @@ const TasksPage: React.FC = () => {
                           <div className="flex gap-3">
                               <button onClick={() => handleToggleStatus(task)} className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800">Pause</button>
                               <button onClick={() => handleOpenModal(task)} className="text-sm font-semibold text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Edit</button>
-                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700">Delete</button>
                           </div>
                       </div>
                   </div>
@@ -668,7 +667,6 @@ const TasksPage: React.FC = () => {
                           <span className="font-bold text-xl text-gray-600 dark:text-gray-400">Rs {(task.reward ?? 0).toFixed(2)}</span>
                           <div className="flex gap-3">
                               {task.status === 'inactive' && <button onClick={() => handleToggleStatus(task)} className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-800">Activate</button>}
-                              <button onClick={() => openDeleteConfirm(task.id)} className="text-sm font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700">Delete</button>
                           </div>
                       </div>
                   </div>

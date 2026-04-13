@@ -19,6 +19,10 @@ import RevenuePage from './pages/RevenuePage';
 import BoosterStorePage from './pages/BoosterStorePage';
 import VideoAdsPage from './pages/VideoAdsPage';
 import MailboxPage from './pages/MailboxPage';
+import PromotionsPage from './pages/PromotionsPage';
+import PromotionSubmissionsPage from './pages/PromotionSubmissionsPage';
+import PromotionOrdersPage from './pages/PromotionOrdersPage';
+import SocialTasksPage from './pages/SocialTasksPage';
 import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
 import PartnerProgramPage from './pages/PartnerProgramPage';
 import LotteryManagementPage from './pages/LotteryManagementPage';
@@ -38,6 +42,10 @@ const App: React.FC = () => {
               <Route path="users" element={<UsersPage />} />
               <Route path="users/:userId" element={<UserProfilePage />} />
               <Route path="tasks" element={<TasksPage />} />
+              <Route path="promotions" element={<PromotionsPage />} />
+              <Route path="promotion-requests" element={<PromotionSubmissionsPage />} />
+              <Route path="promotion-orders" element={<PromotionOrdersPage />} />
+              <Route path="social-tasks" element={<SocialTasksPage />} />
               <Route path="video-ads" element={<VideoAdsPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />

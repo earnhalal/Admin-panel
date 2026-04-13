@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, runTransaction, writeBatch } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
-import { ref, update, set } from 'firebase/database';
+import { ref, update, set, onValue } from 'firebase/database';
 import UserEditModal from '../components/UserEditModal';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
@@ -55,16 +55,65 @@ const UsersPage: React.FC = () => {
   const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-      setUsers(usersData);
-      setLoading(false);
+    setLoading(true);
+    
+    // 1. Listen to RTDB users as the primary source of truth for the list
+    const rtdbUsersRef = ref(rtdb, 'users');
+    const unsubscribeRTDB = onValue(rtdbUsersRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            const rtdbUsers = Object.entries(data).map(([id, value]: [string, any]) => ({
+                id,
+                isPaid: false,
+                paymentStatus: 'none',
+                ...value,
+                // Ensure balance is a number
+                balance: Number(value.balance) || 0
+            } as User));
+            
+            setUsers(prev => {
+                // Merge RTDB users with existing Firestore data
+                return rtdbUsers.map(rUser => {
+                    const existing = prev.find(u => u.id === rUser.id);
+                    return { ...existing, ...rUser };
+                });
+            });
+            setLoading(false);
+        } else {
+            setUsers([]);
+            setLoading(false);
+        }
     }, (error) => {
-      console.error("Error fetching users:", error);
-      addToast('Error fetching users.', 'error');
-      setLoading(false);
+        console.error("Error fetching users from RTDB:", error);
+        addToast('Error fetching users from RTDB.', 'error');
+        setLoading(false);
     });
-    return () => unsubscribe();
+
+    // 2. Listen to Firestore users for profile enrichment (email, username, etc.)
+    const firestoreUsersRef = collection(db, 'users');
+    const unsubscribeFirestore = onSnapshot(firestoreUsersRef, (snapshot) => {
+        const firestoreData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        } as User));
+        
+        setUsers(prev => {
+            return prev.map(u => {
+                const fUser = firestoreData.find(fu => fu.id === u.id);
+                if (fUser) {
+                    return { ...u, ...fUser, balance: u.balance, status: u.status }; // RTDB balance/status takes precedence
+                }
+                return u;
+            });
+        });
+    }, (error) => {
+        console.error("Error fetching users from Firestore:", error);
+    });
+
+    return () => {
+        unsubscribeFirestore();
+        unsubscribeRTDB();
+    };
   }, [addToast]);
 
   const handleEditClick = (user: User) => {
@@ -80,12 +129,26 @@ const UsersPage: React.FC = () => {
   const handleSaveUser = async (updatedUser: User) => {
     setActionLoading(prev => ({...prev, [`save_${updatedUser.id}`]: true}));
     try {
+        // 1. Update Firestore
         const userRef = doc(db, 'users', updatedUser.id);
         const { id, ...dataToSave } = updatedUser;
         await updateDoc(userRef, dataToSave);
-        addToast("User updated successfully!", "success");
+
+        // 2. Update RTDB
+        const rtdbUserRef = ref(rtdb, 'users/' + updatedUser.id);
+        await update(rtdbUserRef, {
+            balance: updatedUser.balance,
+            status: updatedUser.status,
+            username: updatedUser.username,
+            phone: updatedUser.phone,
+            withdrawalPoints: updatedUser.withdrawalPoints,
+            isActivated: updatedUser.isActivated
+        });
+
+        addToast("User updated successfully in both databases!", "success");
         handleCloseModal();
     } catch (error) {
+        console.error("Update error:", error);
         addToast("Failed to update user.", "error");
     } finally {
         setActionLoading(prev => ({...prev, [`save_${updatedUser.id}`]: false}));
@@ -95,30 +158,27 @@ const UsersPage: React.FC = () => {
   const handleVerifyPayment = async (userId: string) => {
     setActionLoading(prev => ({...prev, [`verify_${userId}`]: true}));
     try {
-        try {
-            await runTransaction(db, async (transaction) => {
-                const userRef = doc(db, "users", userId);
-                const userDoc = await transaction.get(userRef);
-                if (!userDoc.exists()) throw "User not found";
-                
-                transaction.update(userRef, { 
-                    isPaid: true, 
-                    paymentStatus: 'verified',
-                    isActivated: true,
-                    status: 'active'
-                });
-            });
-            addToast("Payment verified!", "success");
-        } catch (error) {
-            console.error("Firestore transaction failed", error);
-            addToast("Firestore update failed, but RTDB updated.", "warning");
-        }
+        // 1. Update Firestore
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, { 
+            isPaid: true, 
+            paymentStatus: 'verified',
+            isActivated: true,
+            status: 'active'
+        });
         
-        // Update RTDB status
+        // 2. Update RTDB status
         const userStatusRef = ref(rtdb, 'users/' + userId);
-        await set(userStatusRef, { status: 'active' });
+        await update(userStatusRef, { 
+            status: 'active',
+            isActivated: true,
+            isPaid: true,
+            paymentStatus: 'verified'
+        });
         
+        addToast("Payment verified successfully!", "success");
     } catch(error) {
+        console.error("Verification error:", error);
         addToast("Failed to verify payment.", "error");
     } finally {
         setActionLoading(prev => ({...prev, [`verify_${userId}`]: false}));
@@ -128,12 +188,21 @@ const UsersPage: React.FC = () => {
   const handleRejectPayment = async (userId: string) => {
     setActionLoading(prev => ({...prev, [`reject_${userId}`]: true}));
     try {
+        // 1. Update Firestore
         const userRef = doc(db, 'users', userId);
         await updateDoc(userRef, {
             isPaid: false,
             paymentStatus: 'rejected',
             submittedTransactionId: null
         });
+
+        // 2. Update RTDB
+        const rtdbUserRef = ref(rtdb, 'users/' + userId);
+        await update(rtdbUserRef, {
+            paymentStatus: 'rejected',
+            isPaid: false
+        });
+
         addToast("Payment rejected.", "success");
     } catch (error) {
         addToast("Failed to reject payment.", "error");

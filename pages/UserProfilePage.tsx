@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
+import { ref, remove } from 'firebase/database';
 import { User } from './UsersPage';
 import { Task } from './TasksPage';
 import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
@@ -103,8 +104,14 @@ const UserProfilePage: React.FC = () => {
         if (!userId) return;
         setIsDeleting(true);
         try {
+            // 1. Delete from Firestore
             await deleteDoc(doc(db, 'users', userId));
-            addToast('User data permanently deleted.', 'success');
+            
+            // 2. Delete from RTDB
+            const userRef = ref(rtdb, 'users/' + userId);
+            await remove(userRef);
+
+            addToast('User data permanently deleted from all databases.', 'success');
             navigate('/users');
         } catch (error) {
             console.error("Error deleting user:", error);

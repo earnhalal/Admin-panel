@@ -25,7 +25,8 @@ const NotificationBell: React.FC = () => {
         const firestoreQueries = {
             withdrawal: query(collection(db, 'withdrawals'), where('status', 'in', ['Pending', 'pending'])),
             task: query(collection(db, 'userTasks'), where('status', '==', 'submitted')),
-            referral: query(collection(db, 'referrals'), where('status', '==', 'pending_bonus'))
+            referral: query(collection(db, 'referrals'), where('status', '==', 'pending_bonus')),
+            deposit: query(collection(db, 'deposits'), where('status', 'in', ['pending', 'Pending']), where('type', '!=', 'activation'))
         };
 
         const unsubscribes = Object.entries(firestoreQueries).map(([type, q]) => {
@@ -40,30 +41,8 @@ const NotificationBell: React.FC = () => {
             });
         });
 
-        // RTDB for deposits
-        const depositsRef = ref(rtdb, 'deposits');
-        const unsubscribeDeposits = onValue(depositsRef, (snapshot) => {
-            const data = snapshot.val();
-            let count = 0;
-            if (data) {
-                Object.values(data).forEach((val: any) => {
-                    if (val.status && val.status.toLowerCase() === 'pending') {
-                        count++;
-                    }
-                });
-            }
-            setNotifications(prev => {
-                const otherNotifs = prev.filter(n => n.type !== 'deposit');
-                if (count > 0) {
-                    return [...otherNotifs, { type: 'deposit', count }];
-                }
-                return otherNotifs;
-            });
-        });
-
         return () => {
             unsubscribes.forEach(unsub => unsub());
-            unsubscribeDeposits();
         };
     }, []);
     
