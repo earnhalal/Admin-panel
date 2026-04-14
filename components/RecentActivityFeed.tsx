@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { UsersIcon } from './icons/UsersIcon';
-import { WithdrawalIcon } from './icons/WithdrawalIcon';
-import { DepositIcon } from './icons/DepositIcon';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import { Users, ArrowUpRight, ArrowDownToLine, Clock } from 'lucide-react';
 
 interface ActivityItem {
     id: string;
@@ -10,10 +10,10 @@ interface ActivityItem {
     timestamp: Date;
 }
 
-const ICONS: { [key in ActivityItem['type']]: React.ReactNode } = {
-    user: <UsersIcon className="w-4 h-4 text-sky-500" />,
-    withdrawal: <WithdrawalIcon className="w-4 h-4 text-red-500" />,
-    deposit: <DepositIcon className="w-4 h-4 text-green-500" />,
+const ICONS = {
+    user: <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-600"><Users size={16} /></div>,
+    withdrawal: <div className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-600"><ArrowUpRight size={16} /></div>,
+    deposit: <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-green-600"><ArrowDownToLine size={16} /></div>,
 };
 
 const RecentActivityFeed: React.FC = () => {
@@ -21,45 +21,93 @@ const RecentActivityFeed: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Firestore calls disabled to prevent Quota Exceeded errors
-        setLoading(false);
-        return () => {};
+        // Listen to recent deposits
+        const depositsQuery = query(collection(db, 'deposits'), orderBy('createdAt', 'desc'), limit(5));
+        const unsubDeposits = onSnapshot(depositsQuery, (snapshot) => {
+            const items = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    type: 'deposit' as const,
+                    text: `New ${data.type || 'deposit'} request of Rs ${data.amount}`,
+                    timestamp: data.createdAt?.toDate() || new Date()
+                };
+            });
+            updateActivities(items);
+        });
+
+        // Listen to recent withdrawals
+        const withdrawalsQuery = query(collection(db, 'withdrawals'), orderBy('createdAt', 'desc'), limit(5));
+        const unsubWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
+            const items = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    type: 'withdrawal' as const,
+                    text: `Withdrawal request of Rs ${data.amount}`,
+                    timestamp: data.createdAt?.toDate() || new Date()
+                };
+            });
+            updateActivities(items);
+        });
+
+        const updateActivities = (newItems: ActivityItem[]) => {
+            setActivities(prev => {
+                const combined = [...prev, ...newItems];
+                // Remove duplicates by ID
+                const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+                // Sort by timestamp desc and limit to 10
+                return unique.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 10);
+            });
+            setLoading(false);
+        };
+
+        return () => {
+            unsubDeposits();
+            unsubWithdrawals();
+        };
     }, []);
     
     const timeSince = (date: Date) => {
-        if (date.getTime() === 0) return 'a while ago';
         const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-        let interval = seconds / 31536000;
-        if (interval > 1) return Math.floor(interval) + " years ago";
-        interval = seconds / 2592000;
-        if (interval > 1) return Math.floor(interval) + " months ago";
-        interval = seconds / 86400;
-        if (interval > 1) return Math.floor(interval) + " days ago";
-        interval = seconds / 3600;
-        if (interval > 1) return Math.floor(interval) + " hours ago";
-        interval = seconds / 60;
-        if (interval > 1) return Math.floor(interval) + " minutes ago";
-        if (seconds < 5) return "just now";
-        return Math.floor(seconds) + " seconds ago";
+        if (seconds < 60) return "just now";
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        return date.toLocaleDateString();
     }
 
+    if (loading) return <div className="space-y-4 animate-pulse">
+        {[1,2,3].map(i => <div key={i} className="h-12 bg-gray-100 dark:bg-slate-800 rounded-xl"></div>)}
+    </div>;
+
     return (
-        <div>
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4">Recent Activity</h2>
-            {loading ? <p>Loading activity...</p> : 
-                activities.length === 0 ? <p className="text-sm text-gray-500">No recent activity.</p> :
+        <div className="space-y-4">
+            {activities.length === 0 ? (
+                <div className="text-center py-8">
+                    <Clock className="mx-auto text-gray-300 mb-2" size={32} />
+                    <p className="text-sm text-gray-500">No recent activity found.</p>
+                </div>
+            ) : (
                 <ul className="space-y-4">
                     {activities.map(activity => (
-                        <li key={activity.id} className="flex items-start gap-3">
-                            <div className="flex-shrink-0 mt-1 bg-slate-100 dark:bg-slate-800 p-2 rounded-full">{ICONS[activity.type]}</div>
-                            <div>
-                                <p className="text-sm text-gray-800 dark:text-gray-200">{activity.text}</p>
-                                <p className="text-xs text-gray-400">{timeSince(activity.timestamp)}</p>
+                        <li key={activity.id} className="flex items-center gap-4 group">
+                            <div className="flex-shrink-0 transition-transform group-hover:scale-110">
+                                {ICONS[activity.type]}
+                            </div>
+                            <div className="flex-grow min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {activity.text}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {timeSince(activity.timestamp)}
+                                </p>
                             </div>
                         </li>
                     ))}
                 </ul>
-            }
+            )}
         </div>
     );
 };

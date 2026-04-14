@@ -21,7 +21,8 @@ import {
   Ticket,
   History,
   Megaphone,
-  Globe
+  Globe,
+  Users2
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
@@ -132,6 +133,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           </NavLink>
           <NavLink to="/settings" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Settings size={18} className="mr-3" /> Settings
+          </NavLink>
+          <NavLink to="/team" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Users2 size={18} className="mr-3" /> Team Management
           </NavLink>
         </nav>
 

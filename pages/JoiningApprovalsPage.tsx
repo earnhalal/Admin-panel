@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db, rtdb } from '../services/firebase';
 import { ref, onValue, set, remove, get, update } from 'firebase/database';
-import { doc, updateDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, onSnapshot, Timestamp, getDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Check, X, User as UserIcon, CreditCard, Calendar, Search, ArrowLeft } from 'lucide-react';
@@ -144,11 +144,27 @@ const JoiningApprovalsPage: React.FC = () => {
         const userSnap = await get(userRtdbRef);
         const userData = userSnap.val();
         
-        if (userData && userData.referredBy) {
-            const referrerUid = userData.referredBy;
-            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { status: 'paid' });
+        let referrerUid = userData?.referredBy || userData?.referrerUid || userData?.referrerId;
+        
+        // Try Firestore if not in RTDB
+        if (!referrerUid) {
+            try {
+                const userFsSnap = await getDoc(doc(db, 'users', userId));
+                if (userFsSnap.exists()) {
+                    const fsData = userFsSnap.data();
+                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId;
+                }
+            } catch (e) {}
+        }
+        
+        if (referrerUid) {
+            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
+                status: 'paid',
+                paidAt: Date.now(),
+                commission: 125
+            });
             
-            const rewardAmount = 100;
+            const rewardAmount = 125;
             const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
             const balanceSnap = await get(balanceRef);
             const currentBalance = balanceSnap.val() || 0;
@@ -168,6 +184,11 @@ const JoiningApprovalsPage: React.FC = () => {
             const countSnap = await get(countRef);
             const currentCount = countSnap.val() || 0;
             await set(countRef, currentCount + 1);
+
+            const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
+            const activeMembersSnap = await get(activeMembersRef);
+            const currentActiveMembers = activeMembersSnap.val() || 0;
+            await set(activeMembersRef, currentActiveMembers + 1);
         }
 
         // 4. Move to approved_history
@@ -211,12 +232,20 @@ const JoiningApprovalsPage: React.FC = () => {
     }
   };
 
-  const filteredRequests = requests.filter(req => 
-    req.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.userEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.phoneNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.transactionId?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredRequests = useMemo(() => {
+    return requests
+      .filter(req => 
+        req.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        req.userEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        req.phoneNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        req.transactionId?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => {
+        const dateA = a.createdAt ? (typeof a.createdAt === 'number' ? a.createdAt : new Date(a.createdAt).getTime()) : 0;
+        const dateB = b.createdAt ? (typeof b.createdAt === 'number' ? b.createdAt : new Date(b.createdAt).getTime()) : 0;
+        return dateB - dateA;
+      });
+  }, [requests, searchTerm]);
 
   if (loading) return <div className="flex justify-center items-center min-h-[400px]"><Spinner /></div>;
 

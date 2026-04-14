@@ -23,6 +23,7 @@ const ReferralReportPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
   const ITEMS_PER_PAGE = 10;
   const navigate = useNavigate();
 
@@ -46,40 +47,15 @@ const ReferralReportPage: React.FC = () => {
         if (history) {
           for (const userUid in history) {
             uidsToFetch.add(userUid);
-          }
-        }
-      }
-
-      // Fetch all names in parallel from Firestore
-      const namePromises = Array.from(uidsToFetch).map(async (uid) => {
-        try {
-          const userSnap = await getDoc(doc(db, 'users', uid));
-          if (userSnap.exists()) {
-            const userData = userSnap.data();
-            return { uid, name: userData.username || userData.name || userData.email || 'Unknown' };
-          }
-          return { uid, name: 'Unknown' };
-        } catch (e) {
-          return { uid, name: 'Unknown' };
-        }
-      });
-
-      const names = await Promise.all(namePromises);
-      const nameMap = names.reduce((acc, curr) => ({ ...acc, [curr.uid]: curr.name }), {} as Record<string, string>);
-
-      for (const referrerUid in data) {
-        const history = data[referrerUid].history;
-        if (history) {
-          for (const userUid in history) {
             const referralData = history[userUid];
             allReferrals.push({
               id: `${referrerUid}_${userUid}`,
               referrerUid,
               userUid,
-              referrerName: nameMap[referrerUid] || 'Unknown',
-              userName: nameMap[userUid] || referralData.userName || 'Unknown',
+              referrerName: nameMap[referrerUid] || 'Loading...',
+              userName: nameMap[userUid] || referralData.userName || 'Loading...',
               status: referralData.status || 'unpaid',
-              commission: referralData.status === 'paid' ? 100 : 0,
+              commission: referralData.status === 'paid' ? (referralData.commission || 125) : 0,
               date: referralData.timestamp || 0
             });
           }
@@ -88,13 +64,33 @@ const ReferralReportPage: React.FC = () => {
       
       // Sort by date descending
       allReferrals.sort((a, b) => (b.date || 0) - (a.date || 0));
-      
       setReferrals(allReferrals);
       setLoading(false);
+
+      // Fetch missing names
+      const missingUids = Array.from(uidsToFetch).filter(uid => !nameMap[uid]);
+      if (missingUids.length > 0) {
+        const namePromises = missingUids.map(async (uid) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', uid));
+            if (userSnap.exists()) {
+              const userData = userSnap.data();
+              return { uid, name: userData.username || userData.name || userData.email || 'Unknown' };
+            }
+            return { uid, name: 'Unknown' };
+          } catch (e) {
+            return { uid, name: 'Unknown' };
+          }
+        });
+
+        const names = await Promise.all(namePromises);
+        const newNames = names.reduce((acc, curr) => ({ ...acc, [curr.uid]: curr.name }), {} as Record<string, string>);
+        setNameMap(prev => ({ ...prev, ...newNames }));
+      }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [nameMap]);
 
   const filteredReferrals = useMemo(() => {
     return referrals.filter(ref => 
@@ -113,7 +109,7 @@ const ReferralReportPage: React.FC = () => {
     const total = referrals.length;
     const paid = referrals.filter(r => r.status === 'paid').length;
     const pending = total - paid;
-    const totalEarnings = paid * 100;
+    const totalEarnings = referrals.filter(r => r.status === 'paid').reduce((acc, curr) => acc + (curr.commission || 125), 0);
     return { total, paid, pending, totalEarnings };
   }, [referrals]);
 

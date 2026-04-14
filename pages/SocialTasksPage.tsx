@@ -203,9 +203,6 @@ const SocialTasksPage: React.FC = () => {
                     <button onClick={() => handleOpenModal(task)} className="p-2 text-gray-400 hover:text-indigo-500 transition-colors">
                       <Edit3 size={18} />
                     </button>
-                    <button onClick={() => { setTaskToDelete(task.id); setIsDeleteConfirmOpen(true); }} className="p-2 text-gray-400 hover:text-rose-500 transition-colors">
-                      <Trash2 size={18} />
-                    </button>
                   </div>
                 </div>
                 

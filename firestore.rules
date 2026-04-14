@@ -82,8 +82,21 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         request.auth.token.email == "r83842009@gmail.com");
+         request.auth.token.email == "r83842009@gmail.com" ||
+         (exists(/databases/$(database)/documents/team/$(request.auth.token.email)) && 
+          get(/databases/$(database)/documents/team/$(request.auth.token.email)).data.role == 'admin'));
     }
+
+    function hasRole(role) {
+      return isAuthenticated() && 
+        (isAdmin() || 
+         (exists(/databases/$(database)/documents/team/$(request.auth.token.email)) && 
+          get(/databases/$(database)/documents/team/$(request.auth.token.email)).data.role == role));
+    }
+
+    function isManager() { return hasRole('manager'); }
+    function isEditor() { return hasRole('editor'); }
+    function isPaymentManager() { return hasRole('payment_manager'); }
 
     function isValidUser(data) {
       return data.keys().hasAll(['email', 'username', 'balance', 'role', 'createdAt']) &&
@@ -108,91 +121,96 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    match /team/{email} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || isAdmin() || isManager();
       allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
-      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['username', 'photoURL']));
+      allow update: if isAdmin() || isManager() || (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['username', 'photoURL']));
     }
 
     match /withdrawals/{requestId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && isValidWithdrawal(request.resource.data);
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isPaymentManager();
       allow delete: if isAdmin();
     }
 
     match /userTasks/{submissionId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isEditor() || isManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isEditor() || isManager();
     }
 
     match /referrals/{referralId} {
-      allow read: if isAdmin() || (isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid));
+      allow read: if isAdmin() || isManager() || (isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid));
       allow create: if isAuthenticated() && request.resource.data.referredId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isManager();
     }
 
     match /tasks/{taskId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || isEditor();
+      allow update: if isAdmin() || isEditor();
       allow delete: if isAdmin();
     }
 
     match /lotteries/{lotteryId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin();
-      allow update: if isAdmin() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentMembers']));
+      allow create: if isAdmin() || isEditor();
+      allow update: if isAdmin() || isEditor() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentMembers']));
     }
 
     match /revenue_transactions/{id} {
-      allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow read: if isAdmin() || isPaymentManager();
+      allow create: if isAdmin() || isPaymentManager();
     }
 
     match /withdraw_fees/{id} {
-      allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow read: if isAdmin() || isPaymentManager();
+      allow create: if isAdmin() || isPaymentManager();
     }
 
     match /deposits/{id} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isPaymentManager();
     }
 
     match /promotions/{id} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || isEditor();
+      allow update: if isAdmin() || isEditor();
       allow delete: if isAdmin();
     }
 
     match /promotion_submissions/{id} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isEditor();
     }
 
     match /promotion_orders/{id} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isEditor();
       allow delete: if isAdmin();
     }
 
     match /social_tasks/{id} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || isEditor();
+      allow update: if isAdmin() || isEditor();
       allow delete: if isAdmin();
     }
 
     match /social_task_submissions/{id} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isEditor();
     }
   }
 }

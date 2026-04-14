@@ -25,6 +25,7 @@ import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
 import PartnerProgramPage from './pages/PartnerProgramPage';
 import LotteryManagementPage from './pages/LotteryManagementPage';
 import HistoryPage from './pages/HistoryPage';
+import TeamPage from './pages/TeamPage';
 
 const App: React.FC = () => {
   return (
@@ -57,6 +58,7 @@ const App: React.FC = () => {
               <Route path="fraud-detection" element={<FraudDetectionPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="revenue" element={<RevenuePage />} />
+              <Route path="team" element={<TeamPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />

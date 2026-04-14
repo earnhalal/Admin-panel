@@ -153,17 +153,13 @@ const VideoAdsPage: React.FC = () => {
     }
   };
 
-  const handleBulkAction = async (action: 'activate' | 'deactivate' | 'delete') => {
+  const handleBulkAction = async (action: 'activate' | 'deactivate') => {
       setActionLoading(true);
       const batch = writeBatch(db);
       
       selectedAdIds.forEach(id => {
           const adRef = doc(db, 'video_ads', id);
-          if (action === 'delete') {
-              batch.delete(adRef);
-          } else {
-              batch.update(adRef, { isActive: action === 'activate' });
-          }
+          batch.update(adRef, { isActive: action === 'activate' });
       });
 
       try {
@@ -274,7 +270,7 @@ const VideoAdsPage: React.FC = () => {
                  <div className="flex gap-2">
                      <button onClick={() => handleBulkAction('activate')} className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Activate</button>
                      <button onClick={() => handleBulkAction('deactivate')} className="px-3 py-1.5 text-xs font-bold text-white bg-amber-500 rounded-md hover:bg-amber-600">Deactivate</button>
-                     <button onClick={() => handleBulkAction('delete')} className="px-3 py-1.5 text-xs font-bold text-white bg-rose-600 rounded-md hover:bg-rose-700">Delete</button>
+                     
                  </div>
              </div>
           )}
@@ -359,9 +355,6 @@ const VideoAdsPage: React.FC = () => {
                    </button>
                    <button onClick={() => handleOpenModal(ad)} className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700">
                       <Edit size={18} />
-                   </button>
-                   <button onClick={() => { setAdToDelete(ad.id); setIsDeleteConfirmOpen(true); }} className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg border border-gray-200 dark:border-slate-700">
-                      <Trash2 size={18} />
                    </button>
                 </div>
               </div>

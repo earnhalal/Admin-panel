@@ -40,13 +40,22 @@ const BarChart: React.FC<BarChartProps> = ({ data }) => {
           ))}
         </div>
         {/* Grid and Bars */}
-        <div className="flex-grow grid grid-cols-7 gap-4 relative">
+        <div 
+          className="flex-grow grid gap-4 relative"
+          style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}
+        >
           {/* Grid Lines */}
           {yAxisLabels.map((_, index) => (
             <div
               key={`grid-line-${index}`}
-              className="col-span-7 border-t border-dashed border-gray-200 dark:border-slate-800"
-              style={{ position: 'absolute', top: `${(index / (yAxisLabels.length - 1)) * 100}%`, left: 0, right: 0 }}
+              className="border-t border-dashed border-gray-200 dark:border-slate-800"
+              style={{ 
+                position: 'absolute', 
+                top: `${(index / (yAxisLabels.length - 1)) * 100}%`, 
+                left: 0, 
+                right: 0,
+                width: '100%'
+              }}
             ></div>
           ))}
           {/* Bars */}

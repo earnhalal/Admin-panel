@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
-import { ref, onValue, set, remove } from 'firebase/database';
+import { ref, onValue, set, remove, get, update } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import BarChart from '../components/BarChart';
 import RecentActivityFeed from '../components/RecentActivityFeed';
@@ -20,8 +20,16 @@ import {
   Check,
   X,
   CreditCard,
-  ArrowDownToLine
+  ArrowDownToLine,
+  Activity,
+  Globe,
+  Smartphone,
+  Zap,
+  Megaphone,
+  Share2
 } from 'lucide-react';
+
+type ChartRange = '7days' | '30days' | 'today' | 'yesterday' | 'yearly' | 'all';
 
 interface PendingRequest {
   id: string;
@@ -33,7 +41,7 @@ interface PendingRequest {
 }
 
 const StatCard: React.FC<{ title: string; value: number | string | null; icon: React.ReactNode; loading: boolean; trend?: string }> = ({ title, value, icon, loading, trend }) => (
-  <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow duration-300">
+  <div className="stat-card">
     <div className="flex items-start justify-between mb-4">
        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl text-indigo-600 dark:text-indigo-400">
           {icon}
@@ -52,7 +60,7 @@ const StatCard: React.FC<{ title: string; value: number | string | null; icon: R
 );
 
 const QuickActionCard: React.FC<{ title: string; count: number | null; link: string; icon: React.ReactNode; loading: boolean; colorClass: string; description?: string }> = ({ title, count, link, icon, loading, colorClass, description }) => (
-    <Link to={link} className="group relative bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:border-indigo-500/30 hover:shadow-indigo-500/10 transition-all duration-300 flex items-center justify-between">
+    <Link to={link} className="group relative bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 hover:border-indigo-500/30 hover:shadow-indigo-500/10 transition-all duration-300 flex items-center justify-between">
         <div className="flex items-center gap-5">
             <div className={`p-4 rounded-xl ${colorClass} bg-opacity-10 shrink-0`}>
                 {React.cloneElement(icon as React.ReactElement, { className: `w-8 h-8 ${colorClass.replace('bg-', 'text-')}` })}
@@ -76,7 +84,8 @@ const QuickActionCard: React.FC<{ title: string; count: number | null; link: str
 
 const DashboardPage: React.FC = () => {
   const [userCount, setUserCount] = useState<number | null>(null);
-  const [allUsers, setAllUsers] = useState<{ createdAt: Timestamp }[]>([]);
+  const [rtdbUsers, setRtdbUsers] = useState<any[]>([]);
+  const [fsUsers, setFsUsers] = useState<any[]>([]);
   const [pendingWithdrawals, setPendingWithdrawals] = useState<number | null>(null);
   const [pendingSubmissions, setPendingSubmissions] = useState<number | null>(null);
   const [pendingTaskRequests, setPendingTaskRequests] = useState<number | null>(null);
@@ -97,6 +106,7 @@ const DashboardPage: React.FC = () => {
   const [showActivity, setShowActivity] = useState(true);
   const [pendingDeposits, setPendingDeposits] = useState<number | null>(null);
   const [loadingDeposits, setLoadingDeposits] = useState(true);
+  const [chartRange, setChartRange] = useState<ChartRange>('7days');
 
   const { addToast } = useToast();
 
@@ -125,15 +135,10 @@ const DashboardPage: React.FC = () => {
                 ...value,
                 createdAt: value.createdAt ? { toDate: () => new Date(value.createdAt) } : null
             }));
-            const total = usersList.reduce((acc, user) => acc + (Number(user.balance) || 0), 0);
-            setAllUsers(usersList as any);
-            setTotalBalance(total);
-            setUserCount(usersList.length); // Use RTDB count as source of truth
+            setRtdbUsers(usersList);
             setLoadingUsers(false);
         } else {
-            setAllUsers([]);
-            setTotalBalance(0);
-            setUserCount(0);
+            setRtdbUsers([]);
             setLoadingUsers(false);
         }
         setLoadingBalance(false);
@@ -141,6 +146,18 @@ const DashboardPage: React.FC = () => {
         console.error("Error fetching RTDB user data:", error);
         setLoadingBalance(false);
         setLoadingUsers(false);
+    });
+
+    // Firestore Listener for users
+    const fsUsersRef = collection(db, 'users');
+    const unsubscribeFsUsers = onSnapshot(fsUsersRef, (snapshot) => {
+        const usersList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        setFsUsers(usersList);
+    }, (error) => {
+        console.error("Error fetching Firestore users:", error);
     });
 
     // Firestore Listener for pending withdrawals
@@ -198,20 +215,109 @@ const DashboardPage: React.FC = () => {
       unsubscribeRequests();
       unsubscribeRTDB();
       unsubscribeDeposits();
+      unsubscribeFsUsers();
     };
   }, []);
+
+  const allUsers = useMemo(() => {
+    const merged = new Map();
+    // Use Firestore as base if available, then override with RTDB data (balances etc)
+    fsUsers.forEach(u => merged.set(u.id, u));
+    rtdbUsers.forEach(u => {
+        if (merged.has(u.id)) {
+            merged.set(u.id, { ...merged.get(u.id), ...u });
+        } else {
+            merged.set(u.id, u);
+        }
+    });
+    return Array.from(merged.values());
+  }, [rtdbUsers, fsUsers]);
+
+  useEffect(() => {
+    if (allUsers.length > 0 || !loadingUsers) {
+        setUserCount(allUsers.length);
+        const total = allUsers.reduce((acc, user) => acc + (Number(user.balance) || 0), 0);
+        setTotalBalance(total);
+    }
+  }, [allUsers, loadingUsers]);
 
   const handleApprove = async (request: PendingRequest) => {
     const { userId } = request;
     setActionLoading(prev => ({...prev, [userId]: true}));
     try {
         // 1. Set user status to active in RTDB
-        await set(ref(rtdb, 'users/' + userId + '/status'), 'active');
+        const userRtdbRef = ref(rtdb, 'users/' + userId);
+        await update(userRtdbRef, { 
+            status: 'active',
+            isActivated: true,
+            isPaid: true,
+            paymentStatus: 'verified'
+        });
         
-        // 2. Remove pending request from RTDB
+        // 2. Update Firestore
+        try {
+            await updateDoc(doc(db, 'users', userId), {
+                isPaid: true,
+                paymentStatus: 'verified',
+                isActivated: true,
+                status: 'active'
+            });
+        } catch (e) {}
+
+        // 3. Referral Tracking
+        const userSnap = await get(userRtdbRef);
+        const userData = userSnap.val();
+        
+        let referrerUid = userData?.referredBy || userData?.referrerUid || userData?.referrerId;
+        
+        if (!referrerUid) {
+            try {
+                const userFsSnap = await getDoc(doc(db, 'users', userId));
+                if (userFsSnap.exists()) {
+                    const fsData = userFsSnap.data();
+                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId;
+                }
+            } catch (e) {}
+        }
+        
+        if (referrerUid) {
+            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
+                status: 'paid',
+                paidAt: Date.now(),
+                commission: 125
+            });
+            
+            const rewardAmount = 125;
+            const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
+            const balanceSnap = await get(balanceRef);
+            const currentBalance = balanceSnap.val() || 0;
+            const newBalance = currentBalance + rewardAmount;
+            await set(balanceRef, newBalance);
+
+            try {
+                await updateDoc(doc(db, 'users', referrerUid), { balance: newBalance });
+            } catch (e) {}
+            
+            const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
+            const earningsSnap = await get(earningsRef);
+            const currentEarnings = earningsSnap.val() || 0;
+            await set(earningsRef, currentEarnings + rewardAmount);
+            
+            const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
+            const countSnap = await get(countRef);
+            const currentCount = countSnap.val() || 0;
+            await set(countRef, currentCount + 1);
+
+            const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
+            const activeMembersSnap = await get(activeMembersRef);
+            const currentActiveMembers = activeMembersSnap.val() || 0;
+            await set(activeMembersRef, currentActiveMembers + 1);
+        }
+        
+        // 4. Remove pending request from RTDB
         await remove(ref(rtdb, 'pending_requests/' + userId));
         
-        addToast("Request approved and account activated!", "success");
+        addToast("Request approved and referral processed!", "success");
     } catch(error) {
         console.error(error);
         addToast("Failed to approve request.", "error");
@@ -239,23 +345,88 @@ const DashboardPage: React.FC = () => {
     const data: { [key: string]: number } = {};
     const labels: string[] = [];
 
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      labels.push(label);
-      data[label] = 0;
-    }
-
-    allUsers.forEach(user => {
-      if (user.createdAt) {
-        const joinDate = user.createdAt.toDate();
-        const label = joinDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        if (data.hasOwnProperty(label)) {
-          data[label]++;
+    if (chartRange === '7days' || chartRange === '30days') {
+        const days = chartRange === '7days' ? 7 : 30;
+        for (let i = days - 1; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          labels.push(label);
+          data[label] = 0;
         }
-      }
-    });
+
+        allUsers.forEach(user => {
+          if (user.createdAt) {
+            const joinDate = user.createdAt.toDate();
+            const label = joinDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            if (data.hasOwnProperty(label)) {
+              data[label]++;
+            }
+          }
+        });
+    } else if (chartRange === 'today' || chartRange === 'yesterday') {
+        const targetDate = new Date();
+        if (chartRange === 'yesterday') targetDate.setDate(targetDate.getDate() - 1);
+        const dateStr = targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        // Show hourly for today/yesterday
+        for (let i = 0; i < 24; i++) {
+            const label = `${i}:00`;
+            labels.push(label);
+            data[label] = 0;
+        }
+
+        allUsers.forEach(user => {
+            if (user.createdAt) {
+                const joinDate = user.createdAt.toDate();
+                if (joinDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr) {
+                    const hour = joinDate.getHours();
+                    const label = `${hour}:00`;
+                    if (data.hasOwnProperty(label)) {
+                        data[label]++;
+                    }
+                }
+            }
+        });
+    } else if (chartRange === 'yearly') {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        months.forEach(m => {
+            labels.push(m);
+            data[m] = 0;
+        });
+
+        const currentYear = new Date().getFullYear();
+        allUsers.forEach(user => {
+            if (user.createdAt) {
+                const joinDate = user.createdAt.toDate();
+                if (joinDate.getFullYear() === currentYear) {
+                    const month = months[joinDate.getMonth()];
+                    data[month]++;
+                }
+            }
+        });
+    } else if (chartRange === 'all') {
+        // Show by year
+        const years = new Set<number>();
+        allUsers.forEach(user => {
+            if (user.createdAt) years.add(user.createdAt.toDate().getFullYear());
+        });
+        const sortedYears = Array.from(years).sort();
+        if (sortedYears.length === 0) sortedYears.push(new Date().getFullYear());
+        
+        sortedYears.forEach(y => {
+            const label = y.toString();
+            labels.push(label);
+            data[label] = 0;
+        });
+
+        allUsers.forEach(user => {
+            if (user.createdAt) {
+                const label = user.createdAt.toDate().getFullYear().toString();
+                data[label]++;
+            }
+        });
+    }
 
     return {
       labels,
@@ -264,6 +435,24 @@ const DashboardPage: React.FC = () => {
         data: labels.map(label => data[label]),
       }]
     };
+  }, [allUsers, chartRange]);
+
+  const liveStats = useMemo(() => {
+    const now = Date.now();
+    const tenMinsAgo = now - 10 * 60 * 1000;
+    
+    const onlineUsers = allUsers.filter((u: any) => {
+        const lastActive = u.lastLoginAt || u.lastActive;
+        if (!lastActive) return false;
+        const time = typeof lastActive === 'number' ? lastActive : new Date(lastActive).getTime();
+        return time > tenMinsAgo;
+    }).length;
+
+    // Simulate app vs website if no field exists, or use platform field
+    const appUsers = allUsers.filter((u: any) => u.platform === 'app' || u.isApp).length;
+    const webUsers = allUsers.length - appUsers;
+
+    return { onlineUsers, appUsers, webUsers };
   }, [allUsers]);
 
   return (
@@ -282,25 +471,19 @@ const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Action Area */}
+      {/* Main Action Area - Daily Operations */}
       <div>
-         <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <CheckSquare className="text-indigo-500" />
-            Daily Actions
-         </h2>
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <QuickActionCard 
-                title="Deposits" 
-                description="Wallet top-up requests"
-                count={pendingDeposits} 
-                link="/deposits" 
-                icon={<ArrowDownToLine />} 
-                loading={loadingDeposits} 
-                colorClass="bg-green-600 text-green-600"
-            />
+         <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Zap className="text-amber-500 fill-amber-500" size={20} />
+                Daily Operations
+            </h2>
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Priority Tasks</span>
+         </div>
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <QuickActionCard 
                 title="Joining Approvals" 
-                description="Realtime activation requests"
+                description="New account activations"
                 count={pendingRequests.length} 
                 link="/approvals" 
                 icon={<CreditCard />} 
@@ -308,34 +491,135 @@ const DashboardPage: React.FC = () => {
                 colorClass="bg-indigo-600 text-indigo-600"
             />
             <QuickActionCard 
+                title="Task Submissions" 
+                description="Verify social task proof"
+                count={pendingSubmissions} 
+                link="/social-task-submissions" 
+                icon={<CheckSquare />} 
+                loading={loadingSubmissions} 
+                colorClass="bg-blue-500 text-blue-500"
+            />
+            <QuickActionCard 
                 title="Withdrawals" 
-                description="Review pending payouts"
+                description="Payout requests"
                 count={pendingWithdrawals} 
                 link="/withdrawals" 
                 icon={<ArrowUpRight />} 
                 loading={loadingWithdrawals} 
-                colorClass="bg-amber-500 text-amber-500"
+                colorClass="bg-rose-500 text-rose-500"
             />
             <QuickActionCard 
-                title="Task Submissions" 
-                description="Verify user proof"
-                count={pendingSubmissions} 
-                link="/tasks" 
-                icon={<CheckSquare />} 
-                loading={loadingSubmissions} 
-                colorClass="bg-indigo-500 text-indigo-500"
+                title="Deposits" 
+                description="Wallet top-ups"
+                count={pendingDeposits} 
+                link="/deposits" 
+                icon={<ArrowDownToLine />} 
+                loading={loadingDeposits} 
+                colorClass="bg-green-600 text-green-600"
             />
          </div>
       </div>
 
+      {/* Secondary Operations */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <QuickActionCard 
+              title="Promotion Orders" 
+              description="Manage active campaigns"
+              count={null} 
+              link="/promotion-orders" 
+              icon={<Megaphone />} 
+              loading={false} 
+              colorClass="bg-purple-500 text-purple-500"
+          />
+          <QuickActionCard 
+              title="Referral Report" 
+              description="User network growth"
+              count={null} 
+              link="/referral-report" 
+              icon={<Share2 />} 
+              loading={false} 
+              colorClass="bg-orange-500 text-orange-500"
+          />
+          <QuickActionCard 
+              title="Revenue Report" 
+              description="Financial overview"
+              count={null} 
+              link="/revenue" 
+              icon={<Wallet />} 
+              loading={false} 
+              colorClass="bg-emerald-500 text-emerald-500"
+          />
+          <QuickActionCard 
+              title="Team Manager" 
+              description="Manage staff roles"
+              count={null} 
+              link="/team" 
+              icon={<Users />} 
+              loading={false} 
+              colorClass="bg-slate-600 text-slate-600"
+          />
+      </div>
+
       {/* Stats Grid */}
-      <div>
-        <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Platform Stats</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard title="Total Users" value={userCount} icon={<Users size={24} />} loading={loadingUsers} trend="+12% this week" />
-            <StatCard title="Total Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<Wallet size={24} />} loading={loadingBalance} />
-            <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<ArrowUpRight size={24} />} loading={loadingWithdrawals} />
-            <StatCard title="Pending Tasks" value={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} icon={<CheckSquare size={24} />} loading={loadingTaskRequests || loadingSubmissions} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+            <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Platform Stats</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <StatCard title="Total Users" value={userCount} icon={<Users size={24} />} loading={loadingUsers} trend="+12% this week" />
+                <StatCard title="Total Balance" value={totalBalance !== null ? `Rs ${totalBalance.toFixed(2)}` : null} icon={<Wallet size={24} />} loading={loadingBalance} />
+                <StatCard title="Pending Withdrawals" value={pendingWithdrawals} icon={<ArrowUpRight size={24} />} loading={loadingWithdrawals} />
+                <StatCard title="Pending Tasks" value={(pendingTaskRequests ?? 0) + (pendingSubmissions ?? 0)} icon={<CheckSquare size={24} />} loading={loadingTaskRequests || loadingSubmissions} />
+            </div>
+        </div>
+
+        {/* Live Stats Card */}
+        <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-6 text-white shadow-lg shadow-indigo-500/20 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-10">
+                <Zap size={120} />
+            </div>
+            <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-6">
+                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <h2 className="text-lg font-bold flex items-center gap-2">
+                        Live Platform Activity
+                    </h2>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-white/10 rounded-lg">
+                                <Activity size={20} />
+                            </div>
+                            <span className="text-sm font-medium opacity-90">Online Now</span>
+                        </div>
+                        <span className="text-2xl font-bold">{liveStats.onlineUsers}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white/10 p-4 rounded-xl">
+                            <div className="flex items-center gap-2 mb-1 opacity-80">
+                                <Smartphone size={14} />
+                                <span className="text-xs">App Users</span>
+                            </div>
+                            <p className="text-xl font-bold">{liveStats.appUsers}</p>
+                        </div>
+                        <div className="bg-white/10 p-4 rounded-xl">
+                            <div className="flex items-center gap-2 mb-1 opacity-80">
+                                <Globe size={14} />
+                                <span className="text-xs">Website</span>
+                            </div>
+                            <p className="text-xl font-bold">{liveStats.webUsers}</p>
+                        </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-white/10">
+                        <p className="text-xs opacity-70 italic">
+                            * Users active in the last 10 minutes
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
 
@@ -343,14 +627,22 @@ const DashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2 space-y-6">
             {/* Chart Section */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
                <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <TrendingUp size={20} className="text-indigo-500" /> User Growth
                     </h2>
-                    <select className="bg-gray-50 dark:bg-slate-800 border-none text-sm rounded-lg px-3 py-1 focus:ring-2 focus:ring-indigo-500 text-gray-700 dark:text-gray-300">
-                        <option>Last 7 Days</option>
-                        <option>Last 30 Days</option>
+                    <select 
+                        value={chartRange}
+                        onChange={(e) => setChartRange(e.target.value as ChartRange)}
+                        className="bg-gray-50 dark:bg-slate-800 border-none text-sm rounded-lg px-3 py-1 focus:ring-2 focus:ring-indigo-500 text-gray-700 dark:text-gray-300 outline-none"
+                    >
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="7days">Last 7 Days</option>
+                        <option value="30days">Last 30 Days</option>
+                        <option value="yearly">This Year</option>
+                        <option value="all">All Time</option>
                     </select>
                </div>
                <div className="h-72">
@@ -361,7 +653,7 @@ const DashboardPage: React.FC = () => {
 
         {/* Sidebar Area (Feed) */}
         <div className="space-y-8">
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all duration-300">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-all duration-300">
                <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-bold text-gray-800 dark:text-white">Recent Activity</h2>
                   <button 

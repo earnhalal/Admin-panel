@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, updateDoc, runTransaction, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, runTransaction, writeBatch, getDoc } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
-import { ref, update, set, onValue } from 'firebase/database';
+import { ref, update, set, onValue, get } from 'firebase/database';
 import UserEditModal from '../components/UserEditModal';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
@@ -175,8 +175,58 @@ const UsersPage: React.FC = () => {
             isPaid: true,
             paymentStatus: 'verified'
         });
+
+        // 3. Referral Tracking
+        const userSnap = await get(userStatusRef);
+        const userData = userSnap.val();
         
-        addToast("Payment verified successfully!", "success");
+        let referrerUid = userData?.referredBy || userData?.referrerUid || userData?.referrerId;
+        
+        if (!referrerUid) {
+            try {
+                const userFsSnap = await getDoc(doc(db, 'users', userId));
+                if (userFsSnap.exists()) {
+                    const fsData = userFsSnap.data();
+                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId;
+                }
+            } catch (e) {}
+        }
+        
+        if (referrerUid) {
+            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
+                status: 'paid',
+                paidAt: Date.now(),
+                commission: 125
+            });
+            
+            const rewardAmount = 125;
+            const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
+            const balanceSnap = await get(balanceRef);
+            const currentBalance = balanceSnap.val() || 0;
+            const newBalance = currentBalance + rewardAmount;
+            await set(balanceRef, newBalance);
+
+            try {
+                await updateDoc(doc(db, 'users', referrerUid), { balance: newBalance });
+            } catch (e) {}
+            
+            const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
+            const earningsSnap = await get(earningsRef);
+            const currentEarnings = earningsSnap.val() || 0;
+            await set(earningsRef, currentEarnings + rewardAmount);
+            
+            const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
+            const countSnap = await get(countRef);
+            const currentCount = countSnap.val() || 0;
+            await set(countRef, currentCount + 1);
+
+            const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
+            const activeMembersSnap = await get(activeMembersRef);
+            const currentActiveMembers = activeMembersSnap.val() || 0;
+            await set(activeMembersRef, currentActiveMembers + 1);
+        }
+        
+        addToast("Payment verified and referral processed!", "success");
     } catch(error) {
         console.error("Verification error:", error);
         addToast("Failed to verify payment.", "error");
