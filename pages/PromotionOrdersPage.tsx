@@ -105,17 +105,17 @@ const PromotionOrdersPage: React.FC = () => {
     try {
         // 1. Create Social Task
         await addDoc(collection(db, 'social_tasks'), {
-            title: order.title,
+            title: order.title || 'Untitled',
             description: order.description || '',
             platform: order.platform || 'other',
             reward: order.reward || 0.20,
-            link: order.link,
+            link: order.link || '',
             totalLimit: order.totalLimit || 100,
             views: 0,
             status: 'active',
             createdAt: Timestamp.now(),
-            orderId: order.id,
-            userId: order.userId
+            orderId: order.id || '',
+            userId: order.userId || ''
         });
 
         // 2. Update Order Status
@@ -125,8 +125,9 @@ const PromotionOrdersPage: React.FC = () => {
         });
 
         addToast("Order approved and moved to Social Tasks!", "success");
-    } catch (error) {
-        addToast("Failed to approve order.", "error");
+    } catch (error: any) {
+        console.error("Error approving order:", error);
+        addToast(`Failed to approve order: ${error.message || 'Unknown error'}`, "error");
     } finally {
         setActionLoading(prev => ({...prev, [order.id]: false}));
     }

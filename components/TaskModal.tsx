@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Task, TaskType } from '../pages/TasksPage';
+import { Task, TaskType } from '../pages/SocialTasksPage';
 import Spinner from './Spinner';
 import { YouTubeIcon } from './icons/YouTubeIcon';
 import { InstagramIcon } from './icons/InstagramIcon';

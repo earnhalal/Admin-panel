@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, updateDoc, getDoc, query, where, Timestamp, runTransaction } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, getDoc, query, where, Timestamp, runTransaction, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
@@ -10,18 +10,20 @@ import {
     X, 
     Search, 
     ArrowLeft, 
-    Megaphone, 
+    Globe, 
     User as UserIcon, 
     ExternalLink,
-    Clock
+    Clock,
+    Trash2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import ConfirmationModal from '../components/ConfirmationModal';
 
-interface PromotionSubmission {
+interface SocialTaskSubmission {
   id: string;
   userId: string;
-  promotionId: string;
-  promotionTitle: string;
+  taskId: string;
+  taskTitle: string;
   userName: string;
   userEmail: string;
   proof: string;
@@ -30,28 +32,32 @@ interface PromotionSubmission {
   submittedAt: Timestamp;
 }
 
-const PromotionSubmissionsPage: React.FC = () => {
-  const [submissions, setSubmissions] = useState<PromotionSubmission[]>([]);
+const SocialTaskSubmissionsPage: React.FC = () => {
+  const [submissions, setSubmissions] = useState<SocialTaskSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set());
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [submissionToDelete, setSubmissionToDelete] = useState<string | null>(null);
   const ITEMS_PER_PAGE = 10;
   const { addToast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    const q = query(collection(db, 'promotion_submissions'), where('status', '==', 'pending'));
+    const q = query(collection(db, 'social_task_submissions'), where('status', '==', 'pending'));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       try {
         const subsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
         
         const enrichedSubs = await Promise.all(subsData.map(async (sub) => {
-            // If user data isn't in the submission, fetch it
             let userName = sub.userName;
             let userEmail = sub.userEmail;
+            let taskTitle = sub.taskTitle;
+            let reward = sub.reward;
             
+            // Fetch user data if missing
             if (!userName || !userEmail) {
                 const userRef = doc(db, 'users', sub.userId);
                 const userSnap = await getDoc(userRef);
@@ -62,16 +68,27 @@ const PromotionSubmissionsPage: React.FC = () => {
                 }
             }
 
+            // Fetch task data if missing
+            if (!taskTitle || !reward) {
+                const taskRef = doc(db, 'social_tasks', sub.taskId);
+                const taskSnap = await getDoc(taskRef);
+                if (taskSnap.exists()) {
+                    const taskData = taskSnap.data();
+                    taskTitle = taskTitle || taskData.title || 'Unknown Task';
+                    reward = reward || taskData.reward || 0;
+                }
+            }
+
             return {
                 ...sub,
                 userName: userName || 'Anonymous',
                 userEmail: userEmail || 'N/A',
-            } as PromotionSubmission;
+                taskTitle: taskTitle || 'Unknown Task',
+                reward: reward || 0,
+            } as SocialTaskSubmission;
         }));
         
-        // Sort by submittedAt descending
-        enrichedSubs.sort((a, b) => b.submittedAt?.toMillis() - a.submittedAt?.toMillis());
-        
+        enrichedSubs.sort((a, b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0));
         setSubmissions(enrichedSubs);
       } catch (error) {
           console.error("Error processing submissions:", error);
@@ -92,7 +109,7 @@ const PromotionSubmissionsPage: React.FC = () => {
     return submissions.filter(sub => 
       sub.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sub.userEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sub.promotionTitle.toLowerCase().includes(searchTerm.toLowerCase())
+      sub.taskTitle.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [submissions, searchTerm]);
 
@@ -101,12 +118,12 @@ const PromotionSubmissionsPage: React.FC = () => {
     return filteredSubmissions.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   }, [filteredSubmissions, currentPage]);
 
-  const handleApprove = async (submission: PromotionSubmission) => {
+  const handleApprove = async (submission: SocialTaskSubmission) => {
     setActionLoading(prev => ({...prev, [submission.id]: true}));
     try {
         await runTransaction(db, async (transaction) => {
             const userRef = doc(db, 'users', submission.userId);
-            const submissionRef = doc(db, 'promotion_submissions', submission.id);
+            const submissionRef = doc(db, 'social_task_submissions', submission.id);
             
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("User document not found!");
@@ -132,7 +149,7 @@ const PromotionSubmissionsPage: React.FC = () => {
   const handleReject = async (submissionId: string) => {
     setActionLoading(prev => ({...prev, [submissionId]: true}));
     try {
-        const submissionRef = doc(db, 'promotion_submissions', submissionId);
+        const submissionRef = doc(db, 'social_task_submissions', submissionId);
         await updateDoc(submissionRef, { 
             status: 'rejected',
             rejectedAt: Timestamp.now()
@@ -142,6 +159,22 @@ const PromotionSubmissionsPage: React.FC = () => {
         addToast("Failed to reject submission.", "error");
     } finally {
         setActionLoading(prev => ({...prev, [submissionId]: false}));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!submissionToDelete) return;
+    setActionLoading(prev => ({...prev, [submissionToDelete]: true}));
+    try {
+        const submissionRef = doc(db, 'social_task_submissions', submissionToDelete);
+        await deleteDoc(submissionRef);
+        addToast("Submission deleted permanently.", "success");
+        setIsDeleteConfirmOpen(false);
+        setSubmissionToDelete(null);
+    } catch (error) {
+        addToast("Failed to delete submission.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [submissionToDelete]: false}));
     }
   };
 
@@ -162,7 +195,7 @@ const PromotionSubmissionsPage: React.FC = () => {
       }
   };
 
-  const handleBulkAction = async (action: 'approve' | 'reject') => {
+  const handleBulkAction = async (action: 'approve' | 'reject' | 'delete') => {
       setActionLoading(prev => ({ ...prev, bulk: true }));
       const updates: Promise<void>[] = [];
 
@@ -172,8 +205,10 @@ const PromotionSubmissionsPage: React.FC = () => {
 
           if (action === 'approve') {
               updates.push(handleApprove(submission));
-          } else {
+          } else if (action === 'reject') {
               updates.push(handleReject(subId));
+          } else {
+              updates.push(deleteDoc(doc(db, 'social_task_submissions', subId)));
           }
       }
       
@@ -182,7 +217,7 @@ const PromotionSubmissionsPage: React.FC = () => {
           addToast(`Successfully ${action}d ${selectedSubmissions.size} submissions.`, 'success');
           setSelectedSubmissions(new Set());
       } catch (error) {
-           addToast(`Failed to bulk ${action} submissions.`, 'error');
+            addToast(`Failed to bulk ${action} submissions.`, 'error');
       } finally {
           setActionLoading(prev => ({ ...prev, bulk: false }));
       }
@@ -192,18 +227,20 @@ const PromotionSubmissionsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => navigate(-1)}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-gray-500"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Megaphone className="text-indigo-500" /> Promotion Requests
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Review and approve user promotion submissions</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+            <button 
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-gray-500"
+            >
+            <ArrowLeft size={20} />
+            </button>
+            <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Globe className="text-indigo-500" /> Social Task Submissions
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Review and approve user social task completions</p>
+            </div>
         </div>
       </div>
 
@@ -211,7 +248,7 @@ const PromotionSubmissionsPage: React.FC = () => {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
             type="text"
-            placeholder="Search by User, Email or Promotion Title..."
+            placeholder="Search by User, Email or Task Title..."
             className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -232,9 +269,16 @@ const PromotionSubmissionsPage: React.FC = () => {
                   <button 
                     onClick={() => handleBulkAction('reject')} 
                     disabled={actionLoading.bulk}
-                    className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-colors shadow-sm disabled:opacity-50"
+                    className="px-4 py-1.5 text-xs font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors shadow-sm disabled:opacity-50"
                   >
                     Reject All
+                  </button>
+                  <button 
+                    onClick={() => handleBulkAction('delete')} 
+                    disabled={actionLoading.bulk}
+                    className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    Delete All
                   </button>
               </div>
           </div>
@@ -242,9 +286,9 @@ const PromotionSubmissionsPage: React.FC = () => {
 
       {paginatedSubmissions.length === 0 ? (
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 text-center border border-gray-100 dark:border-slate-800">
-              <Megaphone className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">No pending requests</h3>
-              <p className="text-gray-500 dark:text-gray-400">There are no pending promotion submissions to review.</p>
+              <Globe className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">No pending submissions</h3>
+              <p className="text-gray-500 dark:text-gray-400">There are no pending social task submissions to review.</p>
           </div>
       ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -261,13 +305,21 @@ const PromotionSubmissionsPage: React.FC = () => {
                                       <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">{sub.userEmail}</p>
                                   </div>
                               </div>
-                              <Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} />
+                              <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => { setSubmissionToDelete(sub.id); setIsDeleteConfirmOpen(true); }}
+                                    className="p-2 text-gray-400 hover:text-rose-500 transition-colors"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                                <Checkbox checked={selectedSubmissions.has(sub.id)} onChange={() => handleSelectSubmission(sub.id)} />
+                              </div>
                           </div>
                           
                           <div className="space-y-3">
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
-                                  <span className="text-xs text-gray-500">Promotion</span>
-                                  <span className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[150px]">{sub.promotionTitle}</span>
+                                  <span className="text-xs text-gray-500">Task</span>
+                                  <span className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[150px]">{sub.taskTitle}</span>
                               </div>
                               <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-slate-800">
                                   <span className="text-xs text-gray-500">Reward</span>
@@ -320,8 +372,16 @@ const PromotionSubmissionsPage: React.FC = () => {
             onPageChange={setCurrentPage} 
           />
       )}
+
+      <ConfirmationModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete Submission"
+        message="Are you sure you want to delete this submission permanently? This action cannot be undone."
+      />
     </div>
   );
 };
 
-export default PromotionSubmissionsPage;
+export default SocialTaskSubmissionsPage;

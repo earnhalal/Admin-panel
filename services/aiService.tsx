@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { User } from '../pages/UsersPage';
-import { Task, TaskType } from '../pages/TasksPage';
+import { Task, TaskType } from '../pages/SocialTasksPage';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 

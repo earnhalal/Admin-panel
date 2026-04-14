@@ -20,10 +20,13 @@ import {
 import Spinner from '../components/Spinner';
 import ConfirmationModal from '../components/ConfirmationModal';
 
-interface SocialTask {
+export type TaskType = 'youtube' | 'instagram' | 'facebook' | 'twitter' | 'telegram' | 'other' | 'website';
+
+interface Task {
   id: string;
   title: string;
-  platform: 'youtube' | 'instagram' | 'facebook' | 'twitter' | 'telegram' | 'other';
+  description?: string;
+  platform: TaskType;
   reward: number;
   link: string;
   status: 'active' | 'inactive';
@@ -31,6 +34,19 @@ interface SocialTask {
   views: number;
   totalLimit: number;
 }
+
+interface UserTask {
+  id: string;
+  userId: string;
+  taskId: string;
+  status: 'submitted' | 'approved' | 'rejected';
+  submittedAt: Timestamp;
+  taskTitle?: string;
+  taskReward?: number;
+  proofUrl?: string;
+}
+
+export type { Task, UserTask };
 
 const PLATFORM_ICONS = {
   youtube: <Youtube className="text-red-600" size={20} />,
@@ -42,10 +58,10 @@ const PLATFORM_ICONS = {
 };
 
 const SocialTasksPage: React.FC = () => {
-  const [tasks, setTasks] = useState<SocialTask[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<SocialTask | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -54,7 +70,8 @@ const SocialTasksPage: React.FC = () => {
   // Form state
   const [formData, setFormData] = useState({
     title: '',
-    platform: 'youtube' as SocialTask['platform'],
+    description: '',
+    platform: 'youtube' as Task['platform'],
     reward: 0.20,
     link: '',
     status: 'active' as 'active' | 'inactive',
@@ -65,7 +82,7 @@ const SocialTasksPage: React.FC = () => {
   useEffect(() => {
     const q = query(collection(db, 'social_tasks'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SocialTask));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
       setTasks(data);
       setLoading(false);
     }, (error) => {
@@ -76,11 +93,12 @@ const SocialTasksPage: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const handleOpenModal = (task: SocialTask | null = null) => {
+  const handleOpenModal = (task: Task | null = null) => {
     if (task) {
       setSelectedTask(task);
       setFormData({
         title: task.title,
+        description: task.description || '',
         platform: task.platform,
         reward: task.reward,
         link: task.link,
@@ -92,6 +110,7 @@ const SocialTasksPage: React.FC = () => {
       setSelectedTask(null);
       setFormData({
         title: '',
+        description: '',
         platform: 'youtube',
         reward: 0.20,
         link: '',
@@ -262,6 +281,16 @@ const SocialTasksPage: React.FC = () => {
                   value={formData.title}
                   onChange={(e) => setFormData({...formData, title: e.target.value})}
                   placeholder="e.g. Subscribe to our Channel"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                <textarea
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none min-h-[100px]"
+                  value={formData.description}
+                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  placeholder="Describe the task steps..."
                 />
               </div>
               

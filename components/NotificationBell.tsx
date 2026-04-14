@@ -26,15 +26,20 @@ const NotificationBell: React.FC = () => {
             withdrawal: query(collection(db, 'withdrawals'), where('status', 'in', ['Pending', 'pending'])),
             task: query(collection(db, 'userTasks'), where('status', '==', 'submitted')),
             referral: query(collection(db, 'referrals'), where('status', '==', 'pending_bonus')),
-            deposit: query(collection(db, 'deposits'), where('status', 'in', ['pending', 'Pending']), where('type', '!=', 'activation'))
+            deposit: query(collection(db, 'deposits'), where('status', 'in', ['pending', 'Pending']))
         };
 
         const unsubscribes = Object.entries(firestoreQueries).map(([type, q]) => {
             return onSnapshot(q, (snapshot) => {
+                let count = snapshot.size;
+                if (type === 'deposit') {
+                    // Filter out 'activation' type client-side to avoid composite index
+                    count = snapshot.docs.filter(doc => doc.data().type !== 'activation').length;
+                }
                 setNotifications(prev => {
                     const otherNotifs = prev.filter(n => n.type !== type);
-                    if (snapshot.size > 0) {
-                        return [...otherNotifs, { type: type as Notification['type'], count: snapshot.size }];
+                    if (count > 0) {
+                        return [...otherNotifs, { type: type as Notification['type'], count }];
                     }
                     return otherNotifs;
                 });

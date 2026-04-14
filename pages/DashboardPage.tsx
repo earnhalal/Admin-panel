@@ -104,11 +104,12 @@ const DashboardPage: React.FC = () => {
     // Firestore Listener for pending deposits (excluding activation/joining fee types)
     const depositsQuery = query(
         collection(db, 'deposits'), 
-        where('status', 'in', ['pending', 'Pending']),
-        where('type', '!=', 'activation')
+        where('status', 'in', ['pending', 'Pending'])
     );
     const unsubscribeDeposits = onSnapshot(depositsQuery, (snapshot) => {
-        setPendingDeposits(snapshot.size);
+        // Filter out 'activation' type client-side to avoid composite index
+        const count = snapshot.docs.filter(doc => doc.data().type !== 'activation').length;
+        setPendingDeposits(count);
         setLoadingDeposits(false);
     }, (error) => {
         console.error("Error fetching pending deposits:", error);

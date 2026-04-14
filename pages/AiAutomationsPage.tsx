@@ -4,7 +4,7 @@ import { db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
 import { decideReferralApproval, decideTaskApproval, decideWithdrawalRequest, generateSmartReport } from '../services/aiService';
 import { User } from './UsersPage';
-import { Task, UserTask } from './TasksPage';
+import { Task, UserTask } from './SocialTasksPage';
 import { AiIcon } from '../components/icons/AiIcon';
 import Spinner from '../components/Spinner';
 import { SparklesIcon } from '../components/icons/SparklesIcon';

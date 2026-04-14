@@ -4,8 +4,6 @@ import AdminLayout from './components/AdminLayout';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import UsersPage from './pages/UsersPage';
-import TasksPage from './pages/TasksPage';
-import WithdrawalsPage from './pages/WithdrawalsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import ReferralsPage from './pages/ReferralsPage';
 import ReferralReportPage from './pages/ReferralReportPage';
@@ -18,11 +16,11 @@ import UserProfilePage from './pages/UserProfilePage';
 import RevenuePage from './pages/RevenuePage';
 import BoosterStorePage from './pages/BoosterStorePage';
 import VideoAdsPage from './pages/VideoAdsPage';
+import WithdrawalsPage from './pages/WithdrawalsPage';
 import MailboxPage from './pages/MailboxPage';
-import PromotionsPage from './pages/PromotionsPage';
-import PromotionSubmissionsPage from './pages/PromotionSubmissionsPage';
 import PromotionOrdersPage from './pages/PromotionOrdersPage';
 import SocialTasksPage from './pages/SocialTasksPage';
+import SocialTaskSubmissionsPage from './pages/SocialTaskSubmissionsPage';
 import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
 import PartnerProgramPage from './pages/PartnerProgramPage';
 import LotteryManagementPage from './pages/LotteryManagementPage';
@@ -41,11 +39,9 @@ const App: React.FC = () => {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="users/:userId" element={<UserProfilePage />} />
-              <Route path="tasks" element={<TasksPage />} />
-              <Route path="promotions" element={<PromotionsPage />} />
-              <Route path="promotion-requests" element={<PromotionSubmissionsPage />} />
               <Route path="promotion-orders" element={<PromotionOrdersPage />} />
               <Route path="social-tasks" element={<SocialTasksPage />} />
+              <Route path="social-task-submissions" element={<SocialTaskSubmissionsPage />} />
               <Route path="video-ads" element={<VideoAdsPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />

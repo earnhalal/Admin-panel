@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { generateTaskWithAi } from '../services/aiService';
 import { useToast } from '../contexts/ToastContext';
-import { Task, TaskType } from '../pages/TasksPage';
+import { Task, TaskType } from '../pages/SocialTasksPage';
 import Spinner from './Spinner';
 import { SparklesIcon } from './icons/SparklesIcon';
 

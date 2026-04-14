@@ -4,7 +4,7 @@ import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp, del
 import { db, rtdb } from '../services/firebase';
 import { ref, remove } from 'firebase/database';
 import { User } from './UsersPage';
-import { Task } from './TasksPage';
+import { Task } from './SocialTasksPage';
 import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -49,8 +49,8 @@ const UserProfilePage: React.FC = () => {
             }
 
             // Fetch Transactions (Deposits & Withdrawals)
-            const depositsQuery = query(collection(db, 'deposits'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
-            const withdrawalsQuery = query(collection(db, 'withdrawals'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+            const depositsQuery = query(collection(db, 'deposits'), where('userId', '==', userId));
+            const withdrawalsQuery = query(collection(db, 'withdrawals'), where('userId', '==', userId));
             
             const processTransactions = (snapshot: any, type: 'Deposit' | 'Withdrawal'): Transaction[] => {
                 return snapshot.docs.map((d: any) => {

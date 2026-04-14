@@ -84,20 +84,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/dashboard" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <LayoutDashboard size={18} className="mr-3" /> Dashboard
           </NavLink>
-          <NavLink to="/tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <CheckSquare size={18} className="mr-3" /> Tasks
-          </NavLink>
-          <NavLink to="/promotions" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Megaphone size={18} className="mr-3" /> Promotions
-          </NavLink>
           <NavLink to="/promotion-orders" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Megaphone size={18} className="mr-3" /> Promotion Orders
           </NavLink>
-          <NavLink to="/promotion-requests" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Megaphone size={18} className="mr-3" /> Promotion Submissions
-          </NavLink>
           <NavLink to="/social-tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Globe size={18} className="mr-3" /> Social Tasks
+          </NavLink>
+          <NavLink to="/social-task-submissions" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Globe size={18} className="mr-3" /> Social Task Submissions
           </NavLink>
           <NavLink to="/video-ads" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <PlayCircle size={18} className="mr-3" /> Video Ads
