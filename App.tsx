@@ -25,6 +25,8 @@ import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
 import PartnerProgramPage from './pages/PartnerProgramPage';
 import LotteryManagementPage from './pages/LotteryManagementPage';
 import HistoryPage from './pages/HistoryPage';
+import EarningHistoryPage from './pages/EarningHistoryPage';
+import UserEarningHistoryPage from './pages/UserEarningHistoryPage';
 import TeamPage from './pages/TeamPage';
 
 const App: React.FC = () => {
@@ -48,6 +50,8 @@ const App: React.FC = () => {
               <Route path="deposits" element={<DepositsPage />} />
               <Route path="approvals" element={<JoiningApprovalsPage />} />
               <Route path="history" element={<HistoryPage />} />
+              <Route path="earning-history" element={<EarningHistoryPage />} />
+              <Route path="earning-history/:userId" element={<UserEarningHistoryPage />} />
               <Route path="lotteries" element={<LotteryManagementPage />} />
               <Route path="partner-program" element={<PartnerProgramPage />} />
               <Route path="referrals" element={<ReferralsPage />} />

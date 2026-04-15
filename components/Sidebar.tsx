@@ -122,6 +122,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/history" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <History size={18} className="mr-3" /> Approvals History
           </NavLink>
+          <NavLink to="/earning-history" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <History size={18} className="mr-3" /> Earning History
+          </NavLink>
           <NavLink to="/lotteries" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Ticket size={18} className="mr-3" /> Lotteries
           </NavLink>
