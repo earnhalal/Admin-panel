@@ -18,7 +18,6 @@ import BoosterStorePage from './pages/BoosterStorePage';
 import VideoAdsPage from './pages/VideoAdsPage';
 import WithdrawalsPage from './pages/WithdrawalsPage';
 import MailboxPage from './pages/MailboxPage';
-import PromotionOrdersPage from './pages/PromotionOrdersPage';
 import SocialTasksPage from './pages/SocialTasksPage';
 import SocialTaskSubmissionsPage from './pages/SocialTaskSubmissionsPage';
 import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
@@ -42,7 +41,6 @@ const App: React.FC = () => {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="users/:userId" element={<UserProfilePage />} />
-              <Route path="promotion-orders" element={<PromotionOrdersPage />} />
               <Route path="social-tasks" element={<SocialTasksPage />} />
               <Route path="social-task-submissions" element={<SocialTaskSubmissionsPage />} />
               <Route path="video-ads" element={<VideoAdsPage />} />

@@ -85,9 +85,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/dashboard" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <LayoutDashboard size={18} className="mr-3" /> Dashboard
           </NavLink>
-          <NavLink to="/promotion-orders" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Megaphone size={18} className="mr-3" /> Promotion Orders
-          </NavLink>
           <NavLink to="/social-tasks" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Globe size={18} className="mr-3" /> Social Tasks
           </NavLink>
