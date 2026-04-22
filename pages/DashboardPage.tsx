@@ -532,15 +532,6 @@ const DashboardPage: React.FC = () => {
               colorClass="bg-purple-500 text-purple-500"
           />
           <QuickActionCard 
-              title="Referral Report" 
-              description="User network growth"
-              count={null} 
-              link="/referral-report" 
-              icon={<Share2 />} 
-              loading={false} 
-              colorClass="bg-orange-500 text-orange-500"
-          />
-          <QuickActionCard 
               title="Revenue Report" 
               description="Financial overview"
               count={null} 

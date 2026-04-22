@@ -6,7 +6,6 @@ import LoginPage from './pages/LoginPage';
 import UsersPage from './pages/UsersPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import ReferralsPage from './pages/ReferralsPage';
-import ReferralReportPage from './pages/ReferralReportPage';
 import ToastContainer from './components/ToastContainer';
 import AiAutomationsPage from './pages/AiAutomationsPage';
 import FraudDetectionPage from './pages/FraudDetectionPage';
@@ -53,7 +52,6 @@ const App: React.FC = () => {
               <Route path="lotteries" element={<LotteryManagementPage />} />
               <Route path="partner-program" element={<PartnerProgramPage />} />
               <Route path="referrals" element={<ReferralsPage />} />
-              <Route path="referral-report" element={<ReferralReportPage />} />
               <Route path="booster-store" element={<BoosterStorePage />} />
               <Route path="mailbox" element={<MailboxPage />} />
               <Route path="ai-automations" element={<AiAutomationsPage />} />

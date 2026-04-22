@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, rtdb } from '../services/firebase';
-import { ref, onValue, set, remove, get, update } from 'firebase/database';
-import { doc, updateDoc, setDoc, collection, query, where, onSnapshot, Timestamp, getDoc, increment, addDoc } from 'firebase/firestore';
+import { ref, onValue, set, remove, get, update, serverTimestamp, increment as rtdbIncrement } from 'firebase/database';
+import { doc, updateDoc, setDoc, collection, query, where, onSnapshot, Timestamp, getDoc, increment, addDoc, getDocs } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Check, X, User as UserIcon, CreditCard, Calendar, Search, ArrowLeft } from 'lucide-react';
@@ -144,61 +144,101 @@ const JoiningApprovalsPage: React.FC = () => {
         const userSnap = await get(userRtdbRef);
         const userData = userSnap.val() || {};
         
-        let referrerUid = userData.referredBy || userData.referrerUid || userData.referrerId || userData.invitedBy;
+        const sanitizeReferrer = (raw: string) => {
+            if (!raw) return null;
+            // Handle URL-like strings: extract ref/code or =code
+            if (raw.includes('ref/')) {
+                return raw.split('ref/')[1];
+            }
+            if (raw.includes('=')) {
+                return raw.split('=')[1];
+            }
+            return raw;
+        };
+
+        const extractReferrerUid = (data: any) => {
+            if (!data) return null;
+            const raw = data.referredBy || data.referrerUid || data.referrerId || data.invitedBy;
+            return sanitizeReferrer(raw);
+        };
+
+        const resolveReferrerUid = async (uidOrUsername: string) => {
+            // First check if it's already a UID in RTDB
+            const rtdbUserSnap = await get(ref(rtdb, 'users/' + uidOrUsername));
+            if (rtdbUserSnap.exists()) return uidOrUsername;
+            
+            // Check if it's a username in Firestore
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where("username", "==", uidOrUsername));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+                return querySnapshot.docs[0].id;
+            }
+            
+            // Fallback: search in RTDB users by username if needed - assume uidOrUsername is the code/username
+            return uidOrUsername;
+        };
+
+        let rawReferrer = extractReferrerUid(userData);
         
         // Try Firestore if not in RTDB
-        if (!referrerUid) {
+        if (!rawReferrer) {
             try {
                 const userFsSnap = await getDoc(doc(db, 'users', userId));
                 if (userFsSnap.exists()) {
-                    const fsData = userFsSnap.data() || {};
-                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId || fsData.invitedBy;
+                    rawReferrer = extractReferrerUid(userFsSnap.data() || {});
                 }
             } catch (e) {}
         }
         
+        let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
+        
         if (referrerUid) {
             const rewardAmount = 125;
             
-            // 1. RTDB Updates
-            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
+            // 1. RTDB Referral Status Update
+            console.log(`Debug: referrerUid is: ${referrerUid}, userId is: ${userId}`);
+            const invitePath = `invites/${referrerUid}/history/${userId}`;
+            console.log(`Debug: Updating path: ${invitePath}`);
+            await update(ref(rtdb, invitePath), { 
                 status: 'paid',
-                paidAt: Date.now(),
+                paidAt: serverTimestamp(),
                 commission: rewardAmount
             });
+            console.log(`Debug: Update successful for path: ${invitePath}`);
             
-            const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
-            const balanceSnap = await get(balanceRef);
-            const currentBalance = balanceSnap.val() || 0;
-            const newBalance = currentBalance + rewardAmount;
-            await set(balanceRef, newBalance);
+            // 2. RTDB Stats Update
+            await update(ref(rtdb, `users/${referrerUid}`), {
+                balance: rtdbIncrement(rewardAmount),
+                totalEarnings: rtdbIncrement(rewardAmount),
+                inviteCount: rtdbIncrement(1),
+                activeMembers: rtdbIncrement(1),
+                totalCommission: rtdbIncrement(rewardAmount)
+            });
 
-            const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
-            const earningsSnap = await get(earningsRef);
-            const currentEarnings = earningsSnap.val() || 0;
-            await set(earningsRef, currentEarnings + rewardAmount);
-            
-            const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
-            const countSnap = await get(countRef);
-            const currentCount = countSnap.val() || 0;
-            await set(countRef, currentCount + 1);
-
-            const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
-            const activeMembersSnap = await get(activeMembersRef);
-            const currentActiveMembers = activeMembersSnap.val() || 0;
-            await set(activeMembersRef, currentActiveMembers + 1);
-
-            // 2. Minimal Firestore Update (Just sync balance if document exists, no extra collections to save quota)
+            // 3. Firestore Stats Update (Sync)
             try {
                 const inviterRef = doc(db, 'users', referrerUid);
                 await updateDoc(inviterRef, { 
-                    balance: newBalance,
+                    balance: increment(rewardAmount),
+                    totalEarnings: increment(rewardAmount),
                     'referralStats.activeMembers': increment(1),
                     'referralStats.totalCommission': increment(rewardAmount)
                 });
             } catch (e) {
                // Ignore if inviter is only in RTDB
             }
+
+            // 4. Earning History in Firestore
+            try {
+                await addDoc(collection(db, 'earning_history'), {
+                    userId: referrerUid,
+                    amount: rewardAmount,
+                    source: 'Referral Bonus',
+                    description: 'Bonus for referring a new user',
+                    timestamp: Timestamp.now()
+                });
+            } catch (e) {}
         }
 
         // 4. Move to approved_history

@@ -128,9 +128,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/partner-program" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Handshake size={18} className="mr-3" /> Partner Program
           </NavLink>
-          <NavLink to="/referral-report" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
-            <Share2 size={18} className="mr-3" /> Referral Report
-          </NavLink>
           <NavLink to="/settings" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Settings size={18} className="mr-3" /> Settings
           </NavLink>

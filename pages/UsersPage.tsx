@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, updateDoc, setDoc, runTransaction, writeBatch, getDoc, increment, addDoc, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, runTransaction, writeBatch, getDoc, increment, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
-import { ref, update, set, onValue, get } from 'firebase/database';
+import { ref, update, set, onValue, get, serverTimestamp, increment as rtdbIncrement } from 'firebase/database';
 import UserEditModal from '../components/UserEditModal';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
@@ -182,60 +182,83 @@ const UsersPage: React.FC = () => {
         const userSnap = await get(userStatusRef);
         const userData = userSnap.val() || {};
         
-        let referrerUid = userData.referredBy || userData.referrerUid || userData.referrerId || userData.invitedBy;
+        const extractReferrerUid = (data: any) => {
+            if (!data) return null;
+            const raw = data.referredBy || data.referrerUid || data.referrerId || data.invitedBy;
+            if (!raw) return null;
+            if (typeof raw === 'string') return raw;
+            if (typeof raw === 'object') return raw.uid || raw.id || null;
+            return null;
+        };
+
+        const resolveReferrerUid = async (uidOrUsername: string) => {
+            const rtdbUserSnap = await get(ref(rtdb, 'users/' + uidOrUsername));
+            if (rtdbUserSnap.exists()) return uidOrUsername;
+            
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where("username", "==", uidOrUsername));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+                return querySnapshot.docs[0].id;
+            }
+            return uidOrUsername;
+        };
+
+        let rawReferrer = extractReferrerUid(userData);
         
-        if (!referrerUid) {
+        if (!rawReferrer) {
             try {
                 const userFsSnap = await getDoc(doc(db, 'users', userId));
                 if (userFsSnap.exists()) {
-                    const fsData = userFsSnap.data() || {};
-                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId || fsData.invitedBy;
+                    rawReferrer = extractReferrerUid(userFsSnap.data() || {});
                 }
             } catch (e) {}
         }
         
+        let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
+        
         if (referrerUid) {
             const rewardAmount = 125;
             
-            // 1. RTDB Updates
+            // 1. RTDB Referral Status Update
             await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
                 status: 'paid',
-                paidAt: Date.now(),
+                paidAt: serverTimestamp(),
                 commission: rewardAmount
             });
             
-            const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
-            const balanceSnap = await get(balanceRef);
-            const currentBalance = balanceSnap.val() || 0;
-            const newBalance = currentBalance + rewardAmount;
-            await set(balanceRef, newBalance);
+            // 2. RTDB Stats Update
+            await update(ref(rtdb, `users/${referrerUid}`), {
+                balance: rtdbIncrement(rewardAmount),
+                totalEarnings: rtdbIncrement(rewardAmount),
+                inviteCount: rtdbIncrement(1),
+                activeMembers: rtdbIncrement(1),
+                totalCommission: rtdbIncrement(rewardAmount)
+            });
 
-            const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
-            const earningsSnap = await get(earningsRef);
-            const currentEarnings = earningsSnap.val() || 0;
-            await set(earningsRef, currentEarnings + rewardAmount);
-            
-            const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
-            const countSnap = await get(countRef);
-            const currentCount = countSnap.val() || 0;
-            await set(countRef, currentCount + 1);
-
-            const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
-            const activeMembersSnap = await get(activeMembersRef);
-            const currentActiveMembers = activeMembersSnap.val() || 0;
-            await set(activeMembersRef, currentActiveMembers + 1);
-
-            // 2. Minimal Firestore Updates (Just sync balance if document exists to save free tier quota)
+            // 3. Firestore Updates (Sync)
             try {
                 const inviterRef = doc(db, 'users', referrerUid);
                 await updateDoc(inviterRef, { 
-                    balance: newBalance,
+                    balance: increment(rewardAmount),
+                    totalEarnings: increment(rewardAmount),
                     'referralStats.activeMembers': increment(1),
                     'referralStats.totalCommission': increment(rewardAmount)
                 });
             } catch (e) {
                // Ignore if inviter is only in RTDB
             }
+            
+            // 4. Earning History in Firestore
+            try {
+                await addDoc(collection(db, 'earning_history'), {
+                    userId: referrerUid,
+                    amount: rewardAmount,
+                    source: 'Referral Bonus',
+                    description: `Bonus for referring user ${userId}`,
+                    timestamp: Timestamp.now()
+                });
+            } catch (e) {}
         }
         
         addToast("Payment verified and referral processed!", "success");
@@ -280,21 +303,44 @@ const UsersPage: React.FC = () => {
       let fixedCount = 0;
       
       try {
-          // 1. Fetch from RTDB (Main source for old legacy users)
+          // 1. Fetch from RTDB (Main source for legacy users)
           const rtdbUsersSnap = await get(ref(rtdb, 'users'));
           const rtdbUsers = rtdbUsersSnap.val() || {};
           
-          for (const [userId, rData] of Object.entries<any>(rtdbUsers)) {
-              // Check if user is approved in RTDB
+          // Helper function to process an individual user
+          const processOldReferral = async (userId: string, rData: any) => {
               const isApproved = rData.isPaid || rData.isActivated || rData.status === 'active' || rData.paymentStatus === 'verified' || rData.feeStatus === 'paid';
-              if (!isApproved) continue;
+              if (!isApproved) return 0;
 
-              const referrerUid = rData.referredBy || rData.referrerUid || rData.referrerId || rData.invitedBy;
+              const extractReferrerUid = (data: any) => {
+                  if (!data) return null;
+                  const raw = data.referredBy || data.referrerUid || data.referrerId || data.invitedBy;
+                  if (!raw) return null;
+                  if (typeof raw === 'string') return raw;
+                  if (typeof raw === 'object') return raw.uid || raw.id || null;
+                  return null;
+              };
+
+              const resolveReferrerUid = async (uidOrUsername: string) => {
+                  const rtdbUserSnap = await get(ref(rtdb, 'users/' + uidOrUsername));
+                  if (rtdbUserSnap.exists()) return uidOrUsername;
+                  
+                  const usersRef = collection(db, 'users');
+                  const q = query(usersRef, where("username", "==", uidOrUsername));
+                  const querySnapshot = await getDocs(q);
+                  if (!querySnapshot.empty) {
+                      return querySnapshot.docs[0].id;
+                  }
+                  return uidOrUsername;
+              };
+
+              const rawReferrer = extractReferrerUid(rData);
+              const referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
               
               if (referrerUid) {
                   let alreadyPaid = false;
                   
-                  // Check RTDB invites history FIRST (where old bonuses were tracked)
+                  // Check RTDB invites history FIRST
                   const rtdbInviteSnap = await get(ref(rtdb, `invites/${referrerUid}/history/${userId}`));
                   const rtdbInviteData = rtdbInviteSnap.val();
                   if (rtdbInviteData && rtdbInviteData.status === 'paid') {
@@ -302,76 +348,80 @@ const UsersPage: React.FC = () => {
                   }
 
                   // Check Firestore subcollection if not paid in RTDB
-                  const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
                   if (!alreadyPaid) {
+                      const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
                       const referralSnap = await getDoc(referralRecordRef);
                       if (referralSnap.exists() && referralSnap.data()?.status === 'paid') {
                           alreadyPaid = true;
                       }
                   }
 
-                  // If they have never been paid, award the bonus!
                   if (!alreadyPaid) {
                       try {
                           const rewardAmount = 125;
                   
-                          // 1. RTDB Updates
+                          // 1. RTDB Referral Status Update
                           await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
                               status: 'paid',
-                              paidAt: Date.now(),
+                              paidAt: serverTimestamp(),
                               commission: rewardAmount
                           });
                           
-                          const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
-                          const balanceSnap = await get(balanceRef);
-                          const currentBalance = balanceSnap.val() || 0;
-                          const newBalance = currentBalance + rewardAmount;
-                          await set(balanceRef, newBalance);
+                          // 2. RTDB Stats Update
+                          await update(ref(rtdb, `users/${referrerUid}`), {
+                              balance: rtdbIncrement(rewardAmount),
+                              totalEarnings: rtdbIncrement(rewardAmount),
+                              inviteCount: rtdbIncrement(1),
+                              activeMembers: rtdbIncrement(1),
+                              totalCommission: rtdbIncrement(rewardAmount)
+                          });
 
-                          const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
-                          const earningsSnap = await get(earningsRef);
-                          const currentEarnings = earningsSnap.val() || 0;
-                          await set(earningsRef, currentEarnings + rewardAmount);
+                          // 3. Firestore Updates (Sync)
+                          try {
+                              const inviterRef = doc(db, 'users', referrerUid);
+                              await updateDoc(inviterRef, { 
+                                  balance: increment(rewardAmount),
+                                  totalEarnings: increment(rewardAmount),
+                                  'referralStats.activeMembers': increment(1),
+                                  'referralStats.totalCommission': increment(rewardAmount)
+                              });
+                          } catch (e) {}
                           
-                          const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
-                          const countSnap = await get(countRef);
-                          const currentCount = countSnap.val() || 0;
-                          await set(countRef, currentCount + 1);
+                          try {
+                              await addDoc(collection(db, 'earning_history'), {
+                                  userId: referrerUid,
+                                  amount: rewardAmount,
+                                  source: 'Referral Bonus',
+                                  description: `Retroactive bonus for referring user ${rData.username || rData.name || 'Old User'}`,
+                                  timestamp: Timestamp.now()
+                              });
+                          } catch (e) {}
 
-                          const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
-                          const activeMembersSnap = await get(activeMembersRef);
-                          const currentActiveMembers = activeMembersSnap.val() || 0;
-                          await set(activeMembersRef, currentActiveMembers + 1);
-
-                      // 2. Firestore Updates (Minimal to save Free Tier Quota)
-                      try {
-                          const inviterRef = doc(db, 'users', referrerUid);
-                          await updateDoc(inviterRef, { 
-                              balance: newBalance,
-                              'referralStats.activeMembers': increment(1),
-                              'referralStats.totalCommission': increment(rewardAmount)
-                          });
-                      } catch (e) {
-                          // It's okay if inviter doc doesn't exist in Firestore for very old users
-                      }
-                      
-                      try {
-                          await addDoc(collection(db, 'earning_history'), {
-                              userId: referrerUid,
-                              amount: rewardAmount,
-                              source: 'Referral Bonus',
-                              description: `Retroactive bonus for referring user ${rData.username || rData.name || 'Old User'}`,
-                              timestamp: Timestamp.now()
-                          });
-                      } catch (e) {}
-
-                          fixedCount++;
+                          return 1;
                       } catch (innerError) {
                           console.error("Error patching user", userId, innerError);
                       }
                   }
               }
+              return 0;
+          };
+
+          // Process RTDB Users
+          for (const [userId, rData] of Object.entries<any>(rtdbUsers)) {
+              fixedCount += await processOldReferral(userId, rData);
           }
+
+          // Process Firestore Users (In case older users only exist in Firestore)
+          const fsUsersSnap = await getDocs(collection(db, 'users'));
+          for (const docSnap of fsUsersSnap.docs) {
+              const fsData = docSnap.data();
+              const userId = docSnap.id;
+              // If not already in RTDB or missing referredBy in RTDB
+              if (!rtdbUsers[userId] || !(rtdbUsers[userId].referredBy || rtdbUsers[userId].referrerUid || rtdbUsers[userId].referrerId || rtdbUsers[userId].invitedBy)) {
+                   fixedCount += await processOldReferral(userId, fsData);
+              }
+          }
+
           addToast(`Sync complete! ${fixedCount} missing referral bonuses were awarded.`, 'success');
       } catch (e) {
           console.error(e);

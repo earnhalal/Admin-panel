@@ -1,3 +1,4 @@
+/// <reference types="react" />
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, rtdb } from '../services/firebase';
 import { ref, onValue } from 'firebase/database';
@@ -13,7 +14,7 @@ interface Referral {
   userUid: string;
   referrerName: string;
   userName: string;
-  status: 'paid' | 'unpaid';
+  status: string; // Changed to string to be safe
   commission: number;
   date?: number;
 }
@@ -48,14 +49,18 @@ const ReferralReportPage: React.FC = () => {
           for (const userUid in history) {
             uidsToFetch.add(userUid);
             const referralData = history[userUid];
+            console.log(`Referral debug: referrer: ${referrerUid}, user: ${userUid}, status: ${referralData.status}`);
+            const isPaid = referralData.status === 'paid' || referralData.status === 'PAID';
+            const status = isPaid ? 'paid' : 'unpaid';
+            console.log(`Referral debug: referrer: ${referrerUid}, user: ${userUid}, setting status: ${status}`);
             allReferrals.push({
               id: `${referrerUid}_${userUid}`,
               referrerUid,
               userUid,
               referrerName: nameMap[referrerUid] || 'Loading...',
               userName: nameMap[userUid] || referralData.userName || 'Loading...',
-              status: referralData.status || 'unpaid',
-              commission: referralData.status === 'paid' ? (referralData.commission || 125) : 0,
+              status: status,
+              commission: isPaid ? (referralData.commission || 125) : 0,
               date: referralData.timestamp || 0
             });
           }
@@ -64,6 +69,7 @@ const ReferralReportPage: React.FC = () => {
       
       // Sort by date descending
       allReferrals.sort((a, b) => (b.date || 0) - (a.date || 0));
+      console.log(`Referral debug: total records push to state: ${allReferrals.length}`);
       setReferrals(allReferrals);
       setLoading(false);
 
@@ -107,9 +113,11 @@ const ReferralReportPage: React.FC = () => {
 
   const stats = useMemo(() => {
     const total = referrals.length;
-    const paid = referrals.filter(r => r.status === 'paid').length;
+    const paidReferrals = referrals.filter(r => r.status === 'paid');
+    const paid = paidReferrals.length;
     const pending = total - paid;
-    const totalEarnings = referrals.filter(r => r.status === 'paid').reduce((acc, curr) => acc + (curr.commission || 125), 0);
+    const totalEarnings = paidReferrals.reduce((acc, curr) => acc + (curr.commission || 125), 0);
+    console.log(`Stats debug: total: ${total}, paid: ${paid}, pending: ${pending}`);
     return { total, paid, pending, totalEarnings };
   }, [referrals]);
 
