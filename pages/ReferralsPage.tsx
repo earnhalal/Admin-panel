@@ -1,244 +1,33 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, doc, getDoc, runTransaction, Timestamp, updateDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../services/firebase';
-import { User } from './UsersPage';
+import React, { useState, useEffect } from 'react';
 import { useToast } from '../contexts/ToastContext';
-import { CheckIcon } from '../components/icons/CheckIcon';
-import { XIcon } from '../components/icons/XIcon';
-import Pagination from '../components/Pagination';
-import Checkbox from '../components/Checkbox';
-
-interface Referral {
-    id: string;
-    referrerId: string;
-    referredId: string;
-    status: 'pending_bonus' | 'approved' | 'rejected';
-    bonusAmount: number;
-    createdAt: Timestamp;
-    referrerEmail?: string;
-    referredEmail?: string;
-}
-
-type SortConfig = { key: keyof Referral; direction: 'ascending' | 'descending' } | null;
+import { get, ref } from 'firebase/database';
+import { rtdb } from '../services/firebase';
 
 const ReferralsPage: React.FC = () => {
-    const [referrals, setReferrals] = useState<Referral[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
-    const { addToast } = useToast();
-
-    // New state for advanced features
-    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
-    const [currentPage, setCurrentPage] = useState(1);
-    const [selectedReferrals, setSelectedReferrals] = useState<Set<string>>(new Set());
-    const ITEMS_PER_PAGE = 10;
-
-
-    useEffect(() => {
-        const q = query(collection(db, 'referrals'), where('status', '==', 'pending_bonus'));
-        const unsubscribe = onSnapshot(q, async (snapshot) => {
-            const referralData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Referral));
-            const enrichedData = await Promise.all(referralData.map(async (ref) => {
-                const referrerSnap = await getDoc(doc(db, 'users', ref.referrerId));
-                const referredSnap = await getDoc(doc(db, 'users', ref.referredId));
-                return { ...ref, referrerEmail: referrerSnap.exists() ? (referrerSnap.data() as User).email : 'Unknown', referredEmail: referredSnap.exists() ? (referredSnap.data() as User).email : 'Unknown' };
-            }));
-            setReferrals(enrichedData);
-            setLoading(false);
-        }, (error) => {
-            console.error("Error fetching referrals:", error);
-            addToast('Error fetching referrals.', 'error');
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, [addToast]);
-
-    const sortedReferrals = useMemo(() => {
-        let sortableItems = [...referrals];
-        if (sortConfig) {
-            sortableItems.sort((a, b) => {
-                if (a[sortConfig.key]! < b[sortConfig.key]!) return sortConfig.direction === 'ascending' ? -1 : 1;
-                if (a[sortConfig.key]! > b[sortConfig.key]!) return sortConfig.direction === 'ascending' ? 1 : -1;
-                return 0;
-            });
-        }
-        return sortableItems;
-    }, [referrals, sortConfig]);
-
-    const paginatedReferrals = useMemo(() => {
-        const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-        return sortedReferrals.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-    }, [sortedReferrals, currentPage]);
-
-    const requestSort = (key: keyof Referral) => {
-        let direction: 'ascending' | 'descending' = 'ascending';
-        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
-        }
-        setSortConfig({ key, direction });
-    };
-
-    const handleSelectReferral = (id: string) => {
-        setSelectedReferrals(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(id)) newSet.delete(id);
-            else newSet.add(id);
-            return newSet;
-        });
-    };
-
-    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.checked) {
-            setSelectedReferrals(new Set(paginatedReferrals.map(r => r.id)));
-        } else {
-            setSelectedReferrals(new Set());
-        }
-    };
-    
-    const handleApproveBonus = async (referral: Referral) => {
-        setActionLoading(prev => ({ ...prev, [referral.id]: true }));
-        try {
-            await runTransaction(db, async (transaction) => {
-                const referrerRef = doc(db, 'users', referral.referrerId);
-                const referralRef = doc(db, 'referrals', referral.id);
-
-                const referrerDoc = await transaction.get(referrerRef);
-                if (!referrerDoc.exists()) {
-                    throw new Error("Referrer user not found!");
-                }
-                
-                const newBalance = referrerDoc.data().balance + referral.bonusAmount;
-                transaction.update(referrerRef, { balance: newBalance });
-                transaction.update(referralRef, { status: 'approved' });
-            });
-            addToast("Referral bonus approved successfully!", "success");
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "An unknown error occurred.";
-            addToast(`Failed to approve bonus: ${message}`, "error");
-            console.error(error);
-        } finally {
-            setActionLoading(prev => ({ ...prev, [referral.id]: false }));
-        }
-    };
-
-    const handleRejectBonus = async (referralId: string) => {
-        setActionLoading(prev => ({ ...prev, [referralId]: true }));
-        try {
-            const referralRef = doc(db, 'referrals', referralId);
-            await updateDoc(referralRef, { status: 'rejected' });
-            addToast("Referral bonus rejected.", "success");
-        } catch (error) {
-            addToast("Failed to reject bonus.", "error");
-            console.error(error);
-        } finally {
-            setActionLoading(prev => ({ ...prev, [referralId]: false }));
-        }
-    };
-
-    const handleBulkAction = async (action: 'approve' | 'reject') => {
-        if (selectedReferrals.size === 0) return;
-        setActionLoading({ ...actionLoading, bulk: true });
-
-        const updates: Promise<void>[] = [];
-        for (const refId of selectedReferrals) {
-            const referral = referrals.find(r => r.id === refId);
-            if (!referral) continue;
-            
-            if (action === 'approve') {
-                updates.push(handleApproveBonus(referral));
-            } else {
-                updates.push(handleRejectBonus(refId));
-            }
-        }
-        
-        try {
-            await Promise.all(updates);
-            addToast(`Successfully ${action}d ${selectedReferrals.size} referrals.`, 'success');
-            setSelectedReferrals(new Set());
-        } catch (error) {
-            addToast(`Bulk ${action} failed.`, 'error');
-        } finally {
-            setActionLoading({ ...actionLoading, bulk: false });
-        }
-    };
-
-    if (loading) return <div className="text-center mt-10">Loading...</div>;
-
     return (
-        <div className="container mx-auto">
+        <div className="container mx-auto max-w-4xl pt-8">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">Manage Referral Bonuses</h1>
             
-            {selectedReferrals.size > 0 && (
-                <div className="mb-4 bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-lg flex items-center justify-between">
-                    <span className="text-sm font-medium text-indigo-800 dark:text-indigo-200">{selectedReferrals.size} referral(s) selected</span>
-                    <div className="flex gap-2">
-                        <button onClick={() => handleBulkAction('approve')} className="px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700" disabled={actionLoading.bulk}>Approve</button>
-                        <button onClick={() => handleBulkAction('reject')} className="px-3 py-1 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-700" disabled={actionLoading.bulk}>Reject</button>
-                    </div>
+            <div className="bg-white dark:bg-slate-900 shadow-xl rounded-2xl p-8 text-center border border-gray-100 dark:border-slate-800">
+                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">🚀</span>
                 </div>
-            )}
-            
-            {referrals.length === 0 ? (
-                 <p className="text-center py-10 text-gray-500 dark:text-gray-400">No pending referral bonuses.</p>
-            ) : (
-            <>
-                {/* Desktop Table */}
-                <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg overflow-hidden hidden md:block">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full leading-normal">
-                            <thead>
-                                <tr>
-                                    <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800">
-                                        <Checkbox
-                                            checked={selectedReferrals.size === paginatedReferrals.length && paginatedReferrals.length > 0}
-                                            onChange={handleSelectAll}
-                                            indeterminate={selectedReferrals.size > 0 && selectedReferrals.size < paginatedReferrals.length}
-                                        />
-                                    </th>
-                                    <th onClick={() => requestSort('referrerEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Referrer</th>
-                                    <th onClick={() => requestSort('referredEmail')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Referred User</th>
-                                    <th onClick={() => requestSort('bonusAmount')} className="cursor-pointer px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Bonus</th>
-                                    <th className="px-5 py-3 border-b-2 border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {paginatedReferrals.map((ref) => (
-                                    <tr key={ref.id}>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><Checkbox checked={selectedReferrals.has(ref.id)} onChange={() => handleSelectReferral(ref.id)} /></td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{ref.referrerEmail}</td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">{ref.referredEmail}</td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm">Rs {ref.bonusAmount.toFixed(2)}</td>
-                                        <td className="px-5 py-5 border-b border-gray-200 dark:border-slate-800 text-sm"><div className="flex items-center gap-2"><button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="p-2 bg-green-100 dark:bg-green-900/50 rounded-full"><CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400"/></button><button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full"><XIcon className="w-4 h-4 text-red-600 dark:text-red-400" /></button></div></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedReferrals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage} />
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                    Referrals are now Automated
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 text-lg mb-6">
+                    To save database limits and make your work easier, referral bonuses are now <b>automatically granted</b> when you approve a user's payment or activation request.
+                </p>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl text-left inline-block">
+                    <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">How it works now:</h3>
+                    <ul className="list-disc list-inside text-indigo-700 dark:text-indigo-400 space-y-1 text-sm">
+                        <li>Go to <b>Users</b> or <b>Joining Approvals</b>.</li>
+                        <li>Approve the user's payment request.</li>
+                        <li>The system instantly finds their inviter and credits Rs 125 to their RTDB balance!</li>
+                        <li>Use the "Sync Old Referrals" button in the Users page for old users.</li>
+                    </ul>
                 </div>
-
-                {/* Mobile Cards */}
-                 <div className="md:hidden space-y-4">
-                    {paginatedReferrals.map(ref => (
-                        <div key={ref.id} className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-4">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <p className="font-bold text-lg text-indigo-600 dark:text-indigo-400">Rs {ref.bonusAmount.toFixed(2)}</p>
-                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">From: {ref.referrerEmail}</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">To: {ref.referredEmail}</p>
-                                </div>
-                                <Checkbox checked={selectedReferrals.has(ref.id)} onChange={() => handleSelectReferral(ref.id)} />
-                            </div>
-                            <div className="mt-4 flex justify-end gap-2">
-                                <button onClick={() => handleApproveBonus(ref)} disabled={actionLoading[ref.id]} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700">Approve</button>
-                                <button onClick={() => handleRejectBonus(ref.id)} disabled={actionLoading[ref.id]} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">Reject</button>
-                            </div>
-                        </div>
-                    ))}
-                    <Pagination currentPage={currentPage} totalPages={Math.ceil(sortedReferrals.length / ITEMS_PER_PAGE)} onPageChange={setCurrentPage} />
-                 </div>
-            </>
-            )}
+            </div>
         </div>
     );
 };

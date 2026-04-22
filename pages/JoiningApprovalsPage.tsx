@@ -142,17 +142,17 @@ const JoiningApprovalsPage: React.FC = () => {
 
         // 3. Referral Tracking
         const userSnap = await get(userRtdbRef);
-        const userData = userSnap.val();
+        const userData = userSnap.val() || {};
         
-        let referrerUid = userData?.referredBy || userData?.referrerUid || userData?.referrerId;
+        let referrerUid = userData.referredBy || userData.referrerUid || userData.referrerId || userData.invitedBy;
         
         // Try Firestore if not in RTDB
         if (!referrerUid) {
             try {
                 const userFsSnap = await getDoc(doc(db, 'users', userId));
                 if (userFsSnap.exists()) {
-                    const fsData = userFsSnap.data();
-                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId;
+                    const fsData = userFsSnap.data() || {};
+                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId || fsData.invitedBy;
                 }
             } catch (e) {}
         }
@@ -188,41 +188,16 @@ const JoiningApprovalsPage: React.FC = () => {
             const currentActiveMembers = activeMembersSnap.val() || 0;
             await set(activeMembersRef, currentActiveMembers + 1);
 
-            // 2. Firestore Updates
+            // 2. Minimal Firestore Update (Just sync balance if document exists, no extra collections to save quota)
             try {
-                // Update inviter's balance and referralStats in Firestore
                 const inviterRef = doc(db, 'users', referrerUid);
                 await updateDoc(inviterRef, { 
-                    balance: newBalance, // Sync balance
+                    balance: newBalance,
                     'referralStats.activeMembers': increment(1),
                     'referralStats.totalCommission': increment(rewardAmount)
                 });
             } catch (e) {
-               console.error('Failed to update inviter firestore stats', e)
-            }
-            
-            try {
-                // Update 'referrals' subcollection in Firestore
-                const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
-                await setDoc(referralRecordRef, {
-                    status: 'paid',
-                    paidAt: Timestamp.now()
-                }, { merge: true });
-            } catch (e) {
-               console.error('Failed to update referrals subcollection', e)
-            }
-            
-            try {
-                // Add to earning_history for the inviter
-                await addDoc(collection(db, 'earning_history'), {
-                    userId: referrerUid,
-                    amount: rewardAmount,
-                    source: 'Referral Bonus',
-                    description: `Bonus for referring user ${userData?.username || 'New User'}`,
-                    timestamp: Timestamp.now()
-                });
-            } catch (e) {
-               console.error('Failed to add earning_history', e)
+               // Ignore if inviter is only in RTDB
             }
         }
 

@@ -180,16 +180,16 @@ const UsersPage: React.FC = () => {
 
         // 3. Referral Tracking
         const userSnap = await get(userStatusRef);
-        const userData = userSnap.val();
+        const userData = userSnap.val() || {};
         
-        let referrerUid = userData?.referredBy || userData?.referrerUid || userData?.referrerId;
+        let referrerUid = userData.referredBy || userData.referrerUid || userData.referrerId || userData.invitedBy;
         
         if (!referrerUid) {
             try {
                 const userFsSnap = await getDoc(doc(db, 'users', userId));
                 if (userFsSnap.exists()) {
-                    const fsData = userFsSnap.data();
-                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId;
+                    const fsData = userFsSnap.data() || {};
+                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId || fsData.invitedBy;
                 }
             } catch (e) {}
         }
@@ -225,41 +225,16 @@ const UsersPage: React.FC = () => {
             const currentActiveMembers = activeMembersSnap.val() || 0;
             await set(activeMembersRef, currentActiveMembers + 1);
 
-            // 2. Firestore Updates
+            // 2. Minimal Firestore Updates (Just sync balance if document exists to save free tier quota)
             try {
-                // Update inviter's balance and referralStats in Firestore
                 const inviterRef = doc(db, 'users', referrerUid);
                 await updateDoc(inviterRef, { 
-                    balance: newBalance, // Sync balance
+                    balance: newBalance,
                     'referralStats.activeMembers': increment(1),
                     'referralStats.totalCommission': increment(rewardAmount)
                 });
             } catch (e) {
-               console.error('Failed to update inviter firestore stats', e)
-            }
-            
-            try {
-                // Update 'referrals' subcollection in Firestore
-                const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
-                await setDoc(referralRecordRef, {
-                    status: 'paid',
-                    paidAt: Timestamp.now()
-                }, { merge: true });
-            } catch (e) {
-               console.error('Failed to update referrals subcollection', e)
-            }
-            
-            try {
-                // Add to earning_history for the inviter
-                await addDoc(collection(db, 'earning_history'), {
-                    userId: referrerUid,
-                    amount: rewardAmount,
-                    source: 'Referral Bonus',
-                    description: `Bonus for referring user ${userData?.username || 'New User'}`,
-                    timestamp: Timestamp.now()
-                });
-            } catch (e) {
-               console.error('Failed to add earning_history', e)
+               // Ignore if inviter is only in RTDB
             }
         }
         
@@ -314,7 +289,7 @@ const UsersPage: React.FC = () => {
               const isApproved = rData.isPaid || rData.isActivated || rData.status === 'active' || rData.paymentStatus === 'verified' || rData.feeStatus === 'paid';
               if (!isApproved) continue;
 
-              const referrerUid = rData.referredBy || rData.referrerUid || rData.referrerId;
+              const referrerUid = rData.referredBy || rData.referrerUid || rData.referrerId || rData.invitedBy;
               
               if (referrerUid) {
                   let alreadyPaid = false;
@@ -368,34 +343,27 @@ const UsersPage: React.FC = () => {
                           const currentActiveMembers = activeMembersSnap.val() || 0;
                           await set(activeMembersRef, currentActiveMembers + 1);
 
-                          // 2. Firestore Updates
-                          try {
-                              const inviterRef = doc(db, 'users', referrerUid);
-                              await updateDoc(inviterRef, { 
-                                  balance: newBalance,
-                                  'referralStats.activeMembers': increment(1),
-                                  'referralStats.totalCommission': increment(rewardAmount)
-                              });
-                          } catch (e) {
-                              // It's okay if inviter doc doesn't exist in Firestore for very old users
-                          }
-                          
-                          try {
-                              await setDoc(referralRecordRef, {
-                                  status: 'paid',
-                                  paidAt: Timestamp.now()
-                              }, { merge: true });
-                          } catch (e) {}
-                          
-                          try {
-                              await addDoc(collection(db, 'earning_history'), {
-                                  userId: referrerUid,
-                                  amount: rewardAmount,
-                                  source: 'Referral Bonus',
-                                  description: `Retroactive bonus for referring user ${rData.username || rData.name || 'Old User'}`,
-                                  timestamp: Timestamp.now()
-                              });
-                          } catch (e) {}
+                      // 2. Firestore Updates (Minimal to save Free Tier Quota)
+                      try {
+                          const inviterRef = doc(db, 'users', referrerUid);
+                          await updateDoc(inviterRef, { 
+                              balance: newBalance,
+                              'referralStats.activeMembers': increment(1),
+                              'referralStats.totalCommission': increment(rewardAmount)
+                          });
+                      } catch (e) {
+                          // It's okay if inviter doc doesn't exist in Firestore for very old users
+                      }
+                      
+                      try {
+                          await addDoc(collection(db, 'earning_history'), {
+                              userId: referrerUid,
+                              amount: rewardAmount,
+                              source: 'Referral Bonus',
+                              description: `Retroactive bonus for referring user ${rData.username || rData.name || 'Old User'}`,
+                              timestamp: Timestamp.now()
+                          });
+                      } catch (e) {}
 
                           fixedCount++;
                       } catch (innerError) {
