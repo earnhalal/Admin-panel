@@ -144,16 +144,20 @@ const JoiningApprovalsPage: React.FC = () => {
         const userSnap = await get(userRtdbRef);
         const userData = userSnap.val() || {};
         
-        const sanitizeReferrer = (raw: string) => {
+        const sanitizeReferrer = (raw: any) => {
             if (!raw) return null;
+            if (typeof raw !== 'string') {
+                return raw.uid || raw.id || raw.username || null;
+            }
+            const str = raw.trim();
             // Handle URL-like strings: extract ref/code or =code
-            if (raw.includes('ref/')) {
-                return raw.split('ref/')[1];
+            if (str.includes('ref/')) {
+                return str.split('ref/')[1].trim();
             }
-            if (raw.includes('=')) {
-                return raw.split('=')[1];
+            if (str.includes('=')) {
+                return str.split('=')[1].trim();
             }
-            return raw;
+            return str;
         };
 
         const extractReferrerUid = (data: any) => {
@@ -163,20 +167,51 @@ const JoiningApprovalsPage: React.FC = () => {
         };
 
         const resolveReferrerUid = async (uidOrUsername: string) => {
-            // First check if it's already a UID in RTDB
-            const rtdbUserSnap = await get(ref(rtdb, 'users/' + uidOrUsername));
-            if (rtdbUserSnap.exists()) return uidOrUsername;
+            if (!uidOrUsername) return null;
+            const cleanId = uidOrUsername.trim();
+            console.log(`Debug: Resolving UID for input: "${cleanId}"`);
             
-            // Check if it's a username in Firestore
-            const usersRef = collection(db, 'users');
-            const q = query(usersRef, where("username", "==", uidOrUsername));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-                return querySnapshot.docs[0].id;
+            // 1. Search RTDB for a user whose 'username' matches cleanId (Most likely case)
+            console.log(`Debug: Searching all RTDB users for username: ${cleanId}`);
+            const allUsersSnap = await get(ref(rtdb, 'users'));
+            if (allUsersSnap.exists()) {
+                const users = allUsersSnap.val();
+                for (const uid in users) {
+                    const u = users[uid];
+                    // Check if this record has the matching username
+                    if (u.username === cleanId || 
+                        u.username?.toLowerCase() === cleanId.toLowerCase() ||
+                        u.code === cleanId) {
+                        console.log(`Debug: MATCH FOUND! Username "${cleanId}" belongs to UID: ${uid}`);
+                        return uid; // Found the real UID
+                    }
+                }
             }
             
-            // Fallback: search in RTDB users by username if needed - assume uidOrUsername is the code/username
-            return uidOrUsername;
+            // 2. If no username match, check if cleanId itself is a direct UID
+            // Only if it looks like a UID (usually long string) or we have no other choice
+            const rtdbUserSnap = await get(ref(rtdb, 'users/' + cleanId));
+            if (rtdbUserSnap.exists()) {
+                const data = rtdbUserSnap.val();
+                // Check if it's a real user object or just a leftover/wrong node
+                if (data.uid || data.email || data.username) {
+                    console.log(`Debug: Found as direct UID with valid data: ${cleanId}`);
+                    return cleanId;
+                }
+            }
+
+            // 3. Fallback to Firestore (as backup)
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where("username", "==", cleanId));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+                const fId = querySnapshot.docs[0].id;
+                console.log(`Debug: Found UID in Firestore: ${fId}`);
+                return fId;
+            }
+            
+            console.log(`Debug: WARNING - No match found. Falling back to input: ${cleanId}`);
+            return cleanId;
         };
 
         let rawReferrer = extractReferrerUid(userData);
@@ -208,6 +243,7 @@ const JoiningApprovalsPage: React.FC = () => {
             console.log(`Debug: Update successful for path: ${invitePath}`);
             
             // 2. RTDB Stats Update
+            console.log(`Debug: Updating RTDB stats for referrer: ${referrerUid}, adding ${rewardAmount} to balance`);
             await update(ref(rtdb, `users/${referrerUid}`), {
                 balance: rtdbIncrement(rewardAmount),
                 totalEarnings: rtdbIncrement(rewardAmount),
@@ -215,6 +251,7 @@ const JoiningApprovalsPage: React.FC = () => {
                 activeMembers: rtdbIncrement(1),
                 totalCommission: rtdbIncrement(rewardAmount)
             });
+            console.log(`Debug: RTDB stats update initiated for ${referrerUid}`);
 
             // 3. Firestore Stats Update (Sync)
             try {

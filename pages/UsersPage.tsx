@@ -186,22 +186,46 @@ const UsersPage: React.FC = () => {
             if (!data) return null;
             const raw = data.referredBy || data.referrerUid || data.referrerId || data.invitedBy;
             if (!raw) return null;
-            if (typeof raw === 'string') return raw;
-            if (typeof raw === 'object') return raw.uid || raw.id || null;
-            return null;
+            
+            if (typeof raw !== 'string') {
+                return raw.uid || raw.id || raw.username || null;
+            }
+            
+            const str = raw.trim();
+            // Handle URL-like strings: extract ref/code or =code
+            if (str.includes('ref/')) {
+                return str.split('ref/')[1];
+            }
+            if (str.includes('=')) {
+                return str.split('=')[1];
+            }
+            return str;
         };
 
         const resolveReferrerUid = async (uidOrUsername: string) => {
-            const rtdbUserSnap = await get(ref(rtdb, 'users/' + uidOrUsername));
-            if (rtdbUserSnap.exists()) return uidOrUsername;
+            if (!uidOrUsername) return null;
+            const cleanId = uidOrUsername.trim();
             
-            const usersRef = collection(db, 'users');
-            const q = query(usersRef, where("username", "==", uidOrUsername));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-                return querySnapshot.docs[0].id;
+            // 1. Check direct RTDB UID
+            const rtdbUserSnap = await get(ref(rtdb, 'users/' + cleanId));
+            if (rtdbUserSnap.exists()) return cleanId;
+            
+            // 2. Search RTDB for username
+            const allUsersSnap = await get(ref(rtdb, 'users'));
+            if (allUsersSnap.exists()) {
+                const users = allUsersSnap.val();
+                for (const uid in users) {
+                    const u = users[uid];
+                    if (u.username === cleanId || 
+                        u.username?.toLowerCase() === cleanId.toLowerCase() || 
+                        u.name === cleanId || 
+                        u.code === cleanId) {
+                        return uid;
+                    }
+                }
             }
-            return uidOrUsername;
+
+            return cleanId;
         };
 
         let rawReferrer = extractReferrerUid(userData);
@@ -316,22 +340,36 @@ const UsersPage: React.FC = () => {
                   if (!data) return null;
                   const raw = data.referredBy || data.referrerUid || data.referrerId || data.invitedBy;
                   if (!raw) return null;
-                  if (typeof raw === 'string') return raw;
-                  if (typeof raw === 'object') return raw.uid || raw.id || null;
-                  return null;
+                  
+                  if (typeof raw !== 'string') {
+                    return raw.uid || raw.id || raw.username || null;
+                  }
+                  
+                  const str = raw.trim();
+                  if (str.includes('ref/')) return str.split('ref/')[1].trim();
+                  if (str.includes('=')) return str.split('=')[1].trim();
+                  return str;
               };
 
               const resolveReferrerUid = async (uidOrUsername: string) => {
-                  const rtdbUserSnap = await get(ref(rtdb, 'users/' + uidOrUsername));
-                  if (rtdbUserSnap.exists()) return uidOrUsername;
+                  if (!uidOrUsername) return null;
+                  const cleanId = uidOrUsername.trim();
+                  
+                  const rtdbUserSnap = await get(ref(rtdb, 'users/' + cleanId));
+                  if (rtdbUserSnap.exists()) return cleanId;
                   
                   const usersRef = collection(db, 'users');
-                  const q = query(usersRef, where("username", "==", uidOrUsername));
-                  const querySnapshot = await getDocs(q);
-                  if (!querySnapshot.empty) {
-                      return querySnapshot.docs[0].id;
+                  const variations = [cleanId, cleanId.toLowerCase(), cleanId.toUpperCase()];
+                  for (const val of Array.from(new Set(variations))) {
+                      const q = query(usersRef, where("username", "==", val));
+                      const querySnapshot = await getDocs(q);
+                      if (!querySnapshot.empty) return querySnapshot.docs[0].id;
                   }
-                  return uidOrUsername;
+                  
+                  const snapName = await getDocs(query(usersRef, where("name", "==", cleanId)));
+                  if (!snapName.empty) return snapName.docs[0].id;
+
+                  return cleanId;
               };
 
               const rawReferrer = extractReferrerUid(rData);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ref, onValue, set, remove, get } from 'firebase/database';
+import { ref, onValue, set, remove, get, update } from 'firebase/database';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { rtdb, db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
@@ -136,6 +136,49 @@ const HistoryPage: React.FC = () => {
     }
   };
 
+  const handleMoveToPending = async (request: HistoryRequest) => {
+    const { userId } = request;
+    setActionLoading(prev => ({...prev, [userId]: true}));
+    try {
+        // 1. Move to pending_requests
+        const pendingData = { 
+            ...request, 
+            createdAt: Date.now(), 
+            status: 'pending' 
+        };
+        delete pendingData.approvedAt;
+        
+        await set(ref(rtdb, 'pending_requests/' + userId), pendingData);
+        
+        // 2. Remove from approved_history
+        await remove(ref(rtdb, 'approved_history/' + userId));
+        
+        // 3. Mark user as pending/inactive
+        await update(ref(rtdb, 'users/' + userId), {
+            status: 'pending',
+            isActivated: false,
+            isPaid: false,
+            paymentStatus: 'pending'
+        });
+        
+        try {
+            await updateDoc(doc(db, 'users', userId), {
+                status: 'pending',
+                isActivated: false,
+                isPaid: false,
+                paymentStatus: 'pending'
+            });
+        } catch (e) {}
+        
+        addToast("Request moved back to pending successfully!", "success");
+    } catch(error) {
+        console.error("Move to pending error:", error);
+        addToast("Failed to move request back to pending.", "error");
+    } finally {
+        setActionLoading(prev => ({...prev, [userId]: false}));
+    }
+  };
+
   const currentRequests = 
     activeTab === 'joining_approved' ? joiningApproved : 
     activeTab === 'joining_rejected' ? joiningRejected : 
@@ -264,6 +307,14 @@ const HistoryPage: React.FC = () => {
                               </div>
                           </div>
                       </div>
+                      
+                      {activeTab === 'joining_approved' && (
+                        <div className="p-4 bg-gray-50 dark:bg-slate-800/50 border-t border-gray-100 dark:border-slate-800">
+                            <button onClick={() => handleMoveToPending(req)} disabled={actionLoading[req.userId]} className="w-full py-2.5 rounded-xl bg-orange-600 text-white text-sm font-bold hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20">
+                                {actionLoading[req.userId] ? <Spinner size="sm" /> : <><RefreshCcw size={16} /> Move to Pending</>}
+                            </button>
+                        </div>
+                      )}
                       
                       {activeTab === 'joining_rejected' && (
                         <div className="p-4 bg-gray-50 dark:bg-slate-800/50 border-t border-gray-100 dark:border-slate-800">

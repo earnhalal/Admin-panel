@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc, getDoc, getDocs, increment } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
-import { ref, onValue, set, remove, get, update } from 'firebase/database';
+import { ref, onValue, set, remove, get, update, increment as rtdbIncrement } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import BarChart from '../components/BarChart';
 import RecentActivityFeed from '../components/RecentActivityFeed';
@@ -268,50 +268,66 @@ const DashboardPage: React.FC = () => {
         const userSnap = await get(userRtdbRef);
         const userData = userSnap.val();
         
-        let referrerUid = userData?.referredBy || userData?.referrerUid || userData?.referrerId;
-        
-        if (!referrerUid) {
-            try {
-                const userFsSnap = await getDoc(doc(db, 'users', userId));
-                if (userFsSnap.exists()) {
-                    const fsData = userFsSnap.data();
-                    referrerUid = fsData.referredBy || fsData.referrerUid || fsData.referrerId;
+        const sanitizeReferrer = (raw: any) => {
+            if (!raw) return null;
+            if (typeof raw !== 'string') return raw.uid || raw.id || raw.username || null;
+            const str = raw.trim();
+            if (str.includes('ref/')) return str.split('ref/')[1].trim();
+            if (str.includes('=')) return str.split('=')[1].trim();
+            return str;
+        };
+
+        const resolveReferrerUid = async (uidOrUsername: string) => {
+            if (!uidOrUsername) return null;
+            const cleanId = uidOrUsername.trim();
+            
+            // 1. Check direct RTDB UID
+            const rtdbUserSnap = await get(ref(rtdb, 'users/' + cleanId));
+            if (rtdbUserSnap.exists()) return cleanId;
+            
+            // 2. Search RTDB Users for username
+            const allUsersSnap = await get(ref(rtdb, 'users'));
+            if (allUsersSnap.exists()) {
+                const users = allUsersSnap.val();
+                for (const uid in users) {
+                    const u = users[uid];
+                    if (u.username === cleanId || 
+                        u.username?.toLowerCase() === cleanId.toLowerCase() || 
+                        u.name === cleanId || 
+                        u.code === cleanId) {
+                        return uid;
+                    }
                 }
-            } catch (e) {}
-        }
+            }
+
+            return cleanId;
+        };
+
+        let rawReferrer = sanitizeReferrer(userData?.referredBy || userData?.referrerUid || userData?.referrerId);
+        let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
         
         if (referrerUid) {
+            const rewardAmount = 125;
             await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
                 status: 'paid',
                 paidAt: Date.now(),
-                commission: 125
+                commission: rewardAmount
             });
             
-            const rewardAmount = 125;
-            const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
-            const balanceSnap = await get(balanceRef);
-            const currentBalance = balanceSnap.val() || 0;
-            const newBalance = currentBalance + rewardAmount;
-            await set(balanceRef, newBalance);
+            await update(ref(rtdb, `users/${referrerUid}`), {
+                balance: rtdbIncrement(rewardAmount),
+                totalEarnings: rtdbIncrement(rewardAmount),
+                inviteCount: rtdbIncrement(1),
+                activeMembers: rtdbIncrement(1)
+            });
 
             try {
-                await updateDoc(doc(db, 'users', referrerUid), { balance: newBalance });
+                await updateDoc(doc(db, 'users', referrerUid), { 
+                    balance: increment(rewardAmount),
+                    totalEarnings: increment(rewardAmount),
+                    'referralStats.activeMembers': increment(1)
+                });
             } catch (e) {}
-            
-            const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
-            const earningsSnap = await get(earningsRef);
-            const currentEarnings = earningsSnap.val() || 0;
-            await set(earningsRef, currentEarnings + rewardAmount);
-            
-            const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
-            const countSnap = await get(countRef);
-            const currentCount = countSnap.val() || 0;
-            await set(countRef, currentCount + 1);
-
-            const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
-            const activeMembersSnap = await get(activeMembersRef);
-            const currentActiveMembers = activeMembersSnap.val() || 0;
-            await set(activeMembersRef, currentActiveMembers + 1);
         }
         
         // 4. Remove pending request from RTDB
