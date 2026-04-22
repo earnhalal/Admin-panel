@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, rtdb } from '../services/firebase';
 import { ref, onValue, set, remove, get, update } from 'firebase/database';
-import { doc, updateDoc, collection, query, where, onSnapshot, Timestamp, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, collection, query, where, onSnapshot, Timestamp, getDoc, increment, addDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Check, X, User as UserIcon, CreditCard, Calendar, Search, ArrowLeft } from 'lucide-react';
@@ -158,23 +158,21 @@ const JoiningApprovalsPage: React.FC = () => {
         }
         
         if (referrerUid) {
+            const rewardAmount = 125;
+            
+            // 1. RTDB Updates
             await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
                 status: 'paid',
                 paidAt: Date.now(),
-                commission: 125
+                commission: rewardAmount
             });
             
-            const rewardAmount = 125;
             const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
             const balanceSnap = await get(balanceRef);
             const currentBalance = balanceSnap.val() || 0;
             const newBalance = currentBalance + rewardAmount;
             await set(balanceRef, newBalance);
 
-            try {
-                await updateDoc(doc(db, 'users', referrerUid), { balance: newBalance });
-            } catch (e) {}
-            
             const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
             const earningsSnap = await get(earningsRef);
             const currentEarnings = earningsSnap.val() || 0;
@@ -189,6 +187,43 @@ const JoiningApprovalsPage: React.FC = () => {
             const activeMembersSnap = await get(activeMembersRef);
             const currentActiveMembers = activeMembersSnap.val() || 0;
             await set(activeMembersRef, currentActiveMembers + 1);
+
+            // 2. Firestore Updates
+            try {
+                // Update inviter's balance and referralStats in Firestore
+                const inviterRef = doc(db, 'users', referrerUid);
+                await updateDoc(inviterRef, { 
+                    balance: newBalance, // Sync balance
+                    'referralStats.activeMembers': increment(1),
+                    'referralStats.totalCommission': increment(rewardAmount)
+                });
+            } catch (e) {
+               console.error('Failed to update inviter firestore stats', e)
+            }
+            
+            try {
+                // Update 'referrals' subcollection in Firestore
+                const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
+                await setDoc(referralRecordRef, {
+                    status: 'paid',
+                    paidAt: Timestamp.now()
+                }, { merge: true });
+            } catch (e) {
+               console.error('Failed to update referrals subcollection', e)
+            }
+            
+            try {
+                // Add to earning_history for the inviter
+                await addDoc(collection(db, 'earning_history'), {
+                    userId: referrerUid,
+                    amount: rewardAmount,
+                    source: 'Referral Bonus',
+                    description: `Bonus for referring user ${userData?.username || 'New User'}`,
+                    timestamp: Timestamp.now()
+                });
+            } catch (e) {
+               console.error('Failed to add earning_history', e)
+            }
         }
 
         // 4. Move to approved_history

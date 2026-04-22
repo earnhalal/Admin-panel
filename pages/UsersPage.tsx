@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, updateDoc, runTransaction, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, runTransaction, writeBatch, getDoc, increment, addDoc, Timestamp, getDocs } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
 import { ref, update, set, onValue, get } from 'firebase/database';
 import UserEditModal from '../components/UserEditModal';
@@ -24,6 +24,7 @@ export interface User {
   createdAt?: any;
   lastLoginAt?: any;
   withdrawalPoints?: number;
+  manualWithdrawUnlock?: boolean;
 }
 
 type PaymentStatusFilter = 'all' | 'pending' | 'verified' | 'rejected';
@@ -52,6 +53,7 @@ const UsersPage: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [isSyncingReferrals, setIsSyncingReferrals] = useState(false);
   const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
@@ -193,23 +195,21 @@ const UsersPage: React.FC = () => {
         }
         
         if (referrerUid) {
+            const rewardAmount = 125;
+            
+            // 1. RTDB Updates
             await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
                 status: 'paid',
                 paidAt: Date.now(),
-                commission: 125
+                commission: rewardAmount
             });
             
-            const rewardAmount = 125;
             const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
             const balanceSnap = await get(balanceRef);
             const currentBalance = balanceSnap.val() || 0;
             const newBalance = currentBalance + rewardAmount;
             await set(balanceRef, newBalance);
 
-            try {
-                await updateDoc(doc(db, 'users', referrerUid), { balance: newBalance });
-            } catch (e) {}
-            
             const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
             const earningsSnap = await get(earningsRef);
             const currentEarnings = earningsSnap.val() || 0;
@@ -224,6 +224,43 @@ const UsersPage: React.FC = () => {
             const activeMembersSnap = await get(activeMembersRef);
             const currentActiveMembers = activeMembersSnap.val() || 0;
             await set(activeMembersRef, currentActiveMembers + 1);
+
+            // 2. Firestore Updates
+            try {
+                // Update inviter's balance and referralStats in Firestore
+                const inviterRef = doc(db, 'users', referrerUid);
+                await updateDoc(inviterRef, { 
+                    balance: newBalance, // Sync balance
+                    'referralStats.activeMembers': increment(1),
+                    'referralStats.totalCommission': increment(rewardAmount)
+                });
+            } catch (e) {
+               console.error('Failed to update inviter firestore stats', e)
+            }
+            
+            try {
+                // Update 'referrals' subcollection in Firestore
+                const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
+                await setDoc(referralRecordRef, {
+                    status: 'paid',
+                    paidAt: Timestamp.now()
+                }, { merge: true });
+            } catch (e) {
+               console.error('Failed to update referrals subcollection', e)
+            }
+            
+            try {
+                // Add to earning_history for the inviter
+                await addDoc(collection(db, 'earning_history'), {
+                    userId: referrerUid,
+                    amount: rewardAmount,
+                    source: 'Referral Bonus',
+                    description: `Bonus for referring user ${userData?.username || 'New User'}`,
+                    timestamp: Timestamp.now()
+                });
+            } catch (e) {
+               console.error('Failed to add earning_history', e)
+            }
         }
         
         addToast("Payment verified and referral processed!", "success");
@@ -261,6 +298,121 @@ const UsersPage: React.FC = () => {
     }
   };
   
+  const handleSyncOldReferrals = async () => {
+      setIsSyncingReferrals(true);
+      addToast("Starting sync process... please wait.", 'info');
+      
+      let fixedCount = 0;
+      
+      try {
+          // 1. Fetch from RTDB (Main source for old legacy users)
+          const rtdbUsersSnap = await get(ref(rtdb, 'users'));
+          const rtdbUsers = rtdbUsersSnap.val() || {};
+          
+          for (const [userId, rData] of Object.entries<any>(rtdbUsers)) {
+              // Check if user is approved in RTDB
+              const isApproved = rData.isPaid || rData.isActivated || rData.status === 'active' || rData.paymentStatus === 'verified' || rData.feeStatus === 'paid';
+              if (!isApproved) continue;
+
+              const referrerUid = rData.referredBy || rData.referrerUid || rData.referrerId;
+              
+              if (referrerUid) {
+                  let alreadyPaid = false;
+                  
+                  // Check RTDB invites history FIRST (where old bonuses were tracked)
+                  const rtdbInviteSnap = await get(ref(rtdb, `invites/${referrerUid}/history/${userId}`));
+                  const rtdbInviteData = rtdbInviteSnap.val();
+                  if (rtdbInviteData && rtdbInviteData.status === 'paid') {
+                      alreadyPaid = true;
+                  }
+
+                  // Check Firestore subcollection if not paid in RTDB
+                  const referralRecordRef = doc(db, 'users', referrerUid, 'referrals', userId);
+                  if (!alreadyPaid) {
+                      const referralSnap = await getDoc(referralRecordRef);
+                      if (referralSnap.exists() && referralSnap.data()?.status === 'paid') {
+                          alreadyPaid = true;
+                      }
+                  }
+
+                  // If they have never been paid, award the bonus!
+                  if (!alreadyPaid) {
+                      try {
+                          const rewardAmount = 125;
+                  
+                          // 1. RTDB Updates
+                          await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
+                              status: 'paid',
+                              paidAt: Date.now(),
+                              commission: rewardAmount
+                          });
+                          
+                          const balanceRef = ref(rtdb, `users/${referrerUid}/balance`);
+                          const balanceSnap = await get(balanceRef);
+                          const currentBalance = balanceSnap.val() || 0;
+                          const newBalance = currentBalance + rewardAmount;
+                          await set(balanceRef, newBalance);
+
+                          const earningsRef = ref(rtdb, `users/${referrerUid}/totalEarnings`);
+                          const earningsSnap = await get(earningsRef);
+                          const currentEarnings = earningsSnap.val() || 0;
+                          await set(earningsRef, currentEarnings + rewardAmount);
+                          
+                          const countRef = ref(rtdb, `users/${referrerUid}/inviteCount`);
+                          const countSnap = await get(countRef);
+                          const currentCount = countSnap.val() || 0;
+                          await set(countRef, currentCount + 1);
+
+                          const activeMembersRef = ref(rtdb, `users/${referrerUid}/activeMembers`);
+                          const activeMembersSnap = await get(activeMembersRef);
+                          const currentActiveMembers = activeMembersSnap.val() || 0;
+                          await set(activeMembersRef, currentActiveMembers + 1);
+
+                          // 2. Firestore Updates
+                          try {
+                              const inviterRef = doc(db, 'users', referrerUid);
+                              await updateDoc(inviterRef, { 
+                                  balance: newBalance,
+                                  'referralStats.activeMembers': increment(1),
+                                  'referralStats.totalCommission': increment(rewardAmount)
+                              });
+                          } catch (e) {
+                              // It's okay if inviter doc doesn't exist in Firestore for very old users
+                          }
+                          
+                          try {
+                              await setDoc(referralRecordRef, {
+                                  status: 'paid',
+                                  paidAt: Timestamp.now()
+                              }, { merge: true });
+                          } catch (e) {}
+                          
+                          try {
+                              await addDoc(collection(db, 'earning_history'), {
+                                  userId: referrerUid,
+                                  amount: rewardAmount,
+                                  source: 'Referral Bonus',
+                                  description: `Retroactive bonus for referring user ${rData.username || rData.name || 'Old User'}`,
+                                  timestamp: Timestamp.now()
+                              });
+                          } catch (e) {}
+
+                          fixedCount++;
+                      } catch (innerError) {
+                          console.error("Error patching user", userId, innerError);
+                      }
+                  }
+              }
+          }
+          addToast(`Sync complete! ${fixedCount} missing referral bonuses were awarded.`, 'success');
+      } catch (e) {
+          console.error(e);
+          addToast("Error syncing old referrals. Check system logs.", 'error');
+      } finally {
+          setIsSyncingReferrals(false);
+      }
+  };
+
   const handleBulkAction = async (action: 'verify' | 'reject') => {
       setActionLoading({ ...actionLoading, bulk: true });
       const batch = writeBatch(db);
@@ -352,14 +504,25 @@ const UsersPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
         
-        {selectedUsers.size > 0 && (
-            <div className="flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20 px-4 py-2 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{selectedUsers.size} Selected</span>
-                <div className="h-4 w-px bg-indigo-200 dark:bg-indigo-700"></div>
-                <button onClick={() => handleBulkAction('verify')} className="text-xs font-semibold text-green-600 hover:text-green-800 disabled:opacity-50" disabled={actionLoading.bulk}>Verify</button>
-                <button onClick={() => handleBulkAction('reject')} className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:opacity-50" disabled={actionLoading.bulk}>Reject</button>
-            </div>
-        )}
+        <div className="flex items-center gap-3">
+            <button 
+                onClick={handleSyncOldReferrals}
+                disabled={isSyncingReferrals}
+                className="inline-flex items-center justify-center gap-2 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 font-bold py-2 px-4 rounded-xl transition-all shadow-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50 text-sm"
+            >
+                {isSyncingReferrals ? <Spinner size="sm" /> : <span>🔄</span>}
+                Sync Old Referrals
+            </button>
+
+            {selectedUsers.size > 0 && (
+                <div className="flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20 px-4 py-2 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                    <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{selectedUsers.size} Selected</span>
+                    <div className="h-4 w-px bg-indigo-200 dark:bg-indigo-700"></div>
+                    <button onClick={() => handleBulkAction('verify')} className="text-xs font-semibold text-green-600 hover:text-green-800 disabled:opacity-50" disabled={actionLoading.bulk}>Verify</button>
+                    <button onClick={() => handleBulkAction('reject')} className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:opacity-50" disabled={actionLoading.bulk}>Reject</button>
+                </div>
+            )}
+        </div>
       </div>
       
       {/* Filters */}

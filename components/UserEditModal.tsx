@@ -15,6 +15,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
   const [balance, setBalance] = useState(0);
   const [withdrawalPoints, setWithdrawalPoints] = useState(0);
   const [isActivated, setIsActivated] = useState(false);
+  const [manualWithdrawUnlock, setManualWithdrawUnlock] = useState(false);
   const [status, setStatus] = useState<'active' | 'pending' | 'blocked'>('pending');
 
   useEffect(() => {
@@ -24,13 +25,14 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
       setBalance(user.balance);
       setWithdrawalPoints(user.withdrawalPoints || 0);
       setIsActivated(user.isActivated || false);
+      setManualWithdrawUnlock(user.manualWithdrawUnlock || false);
       setStatus(user.status || 'pending');
     }
   }, [user]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({ ...user, username, phone, balance, withdrawalPoints, isActivated, status });
+    onSave({ ...user, username, phone, balance, withdrawalPoints, isActivated, manualWithdrawUnlock, status });
   };
 
   if (!user) return null;
@@ -99,8 +101,8 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
                 <option value="blocked">Blocked</option>
               </select>
             </div>
-            <div className="flex flex-col justify-center">
-              <label className="flex items-center cursor-pointer mt-4">
+            <div className="flex flex-col justify-center space-y-3">
+              <label className="flex items-center cursor-pointer mt-2">
                 <input
                   type="checkbox"
                   checked={isActivated}
@@ -108,6 +110,16 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave, is
                   className="form-checkbox h-5 w-5 text-indigo-600 transition duration-150 ease-in-out"
                 />
                 <span className="ml-2 text-gray-700 dark:text-gray-300 text-sm font-bold">Is Activated</span>
+              </label>
+
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={manualWithdrawUnlock}
+                  onChange={(e) => setManualWithdrawUnlock(e.target.checked)}
+                  className="form-checkbox h-5 w-5 text-indigo-600 transition duration-150 ease-in-out"
+                />
+                <span className="ml-2 text-gray-700 dark:text-gray-300 text-sm font-bold">Manual Withdraw Unlock</span>
               </label>
             </div>
           </div>

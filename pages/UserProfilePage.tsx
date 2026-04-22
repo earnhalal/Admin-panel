@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
 import { ref, remove } from 'firebase/database';
 import { User } from './UsersPage';
@@ -33,6 +33,7 @@ const UserProfilePage: React.FC = () => {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [taskSubmissions, setTaskSubmissions] = useState<UserTaskSubmission[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isUpdating, setIsUpdating] = useState(false);
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -122,7 +123,25 @@ const UserProfilePage: React.FC = () => {
         }
     };
 
-    const StatusBadge: React.FC<{status: string}> = ({ status }) => {
+    const handleToggleWithdrawUnlock = async () => {
+        if (!userId || !user) return;
+        setIsUpdating(true);
+        try {
+            const newValue = !user.manualWithdrawUnlock;
+            await updateDoc(doc(db, 'users', userId), { manualWithdrawUnlock: newValue });
+            setUser({ ...user, manualWithdrawUnlock: newValue });
+            addToast(`Manual withdraw unlock ${newValue ? 'enabled' : 'disabled'} for user.`, 'success');
+        } catch (error) {
+            console.error("Error updating manual withdraw status:", error);
+            addToast('Failed to update status.', 'error');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const StatusBadge: React.FC<{status?: string}> = ({ status }) => {
+        if (!status) return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">Unknown</span>;
+        
         const lowerStatus = status.toLowerCase();
         const colors: {[key: string]: string} = {
             approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -169,6 +188,24 @@ const UserProfilePage: React.FC = () => {
                            <p><strong>Joined:</strong> {user.createdAt?.toDate().toLocaleDateString() || 'N/A'}</p>
                            <p><strong>Payment Status:</strong> <StatusBadge status={user.paymentStatus} /></p>
                            <p><strong>Is Paid User:</strong> {user.isPaid ? 'Yes' : 'No'}</p>
+                        </div>
+                        
+                        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
+                           <div className="flex items-center justify-between">
+                               <div>
+                                   <p className="font-semibold text-sm">Manual Withdraw Unlock</p>
+                                   <p className="text-xs text-gray-500 dark:text-gray-400">Allow withdrawal regardless of date rules.</p>
+                               </div>
+                               <button 
+                                  onClick={handleToggleWithdrawUnlock}
+                                  disabled={isUpdating}
+                                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 ${user.manualWithdrawUnlock ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                  role="switch"
+                                  aria-checked={!!user.manualWithdrawUnlock}
+                               >
+                                  <span aria-hidden="true" className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${user.manualWithdrawUnlock ? 'translate-x-5' : 'translate-x-0'}`} />
+                               </button>
+                           </div>
                         </div>
 
                         <div className="mt-6 border-t border-gray-200 dark:border-slate-800 pt-4">
