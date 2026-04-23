@@ -15,6 +15,7 @@ import {
   TrendingUp,
   UserPlus
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Spinner from '../components/Spinner';
 
 interface ReferralRecord {
@@ -48,6 +49,7 @@ interface DetailedInvite {
 }
 
 const ReferralReportPage: React.FC = () => {
+    const navigate = useNavigate();
     const [invites, setInvites] = useState<any>({});
     const [users, setUsers] = useState<any>({});
     const [loading, setLoading] = useState(true);
@@ -118,10 +120,13 @@ const ReferralReportPage: React.FC = () => {
             
             const userData = users[referrerUid] || {};
             
+            // Fix: If UID doesn't exist in users node, check if the UID itself is a username
+            const displayName = userData.username || userData.name || userData.code || (referrerUid.length < 20 ? referrerUid : 'Unknown');
+
             const report: ReferrerStats = {
                 uid: referrerUid,
-                name: userData.name || 'Unknown',
-                username: userData.username || userData.code || 'N/A',
+                name: userData.name || (referrerUid.length < 20 ? referrerUid : 'Unknown'),
+                username: displayName === 'Unknown' ? referrerUid : displayName,
                 totalInvites: historyItems.length,
                 paidInvites: historyItems.filter(([_, item]: [string, any]) => item.status === 'paid' || item.status === 'approved').length,
                 pendingInvites: historyItems.filter(([_, item]: [string, any]) => item.status === 'pending' || !item.status).length,
@@ -268,7 +273,11 @@ const ReferralReportPage: React.FC = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-50 dark:divide-slate-800/50">
                                 {(filteredRecords as DetailedInvite[]).map((row) => (
-                                    <tr key={row.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                                    <tr 
+                                        key={row.id} 
+                                        className="hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors cursor-pointer"
+                                        onClick={() => navigate(`/referral-report/${row.referrerUid}`)}
+                                    >
                                         <td className="px-8 py-6">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400">
@@ -317,7 +326,11 @@ const ReferralReportPage: React.FC = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-50 dark:divide-slate-800/50">
                                 {(filteredRecords as ReferrerStats[]).map((stat) => (
-                                    <tr key={stat.uid} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                                    <tr 
+                                        key={stat.uid} 
+                                        className="hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors cursor-pointer"
+                                        onClick={() => navigate(`/referral-report/${stat.uid}`)}
+                                    >
                                         <td className="px-8 py-6">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center font-bold text-indigo-600 dark:text-indigo-400 text-xl border border-indigo-100">
@@ -353,8 +366,9 @@ const ReferralReportPage: React.FC = () => {
                     </div>
                 )}
             </div>
+        </div>
             
-            {/* Legend / Info Footer */}
+        {/* Legend / Info Footer */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
                 <div className="bg-slate-900 dark:bg-indigo-900/10 p-8 rounded-3xl border border-indigo-500/20 shadow-2xl shadow-indigo-500/5">
                     <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">

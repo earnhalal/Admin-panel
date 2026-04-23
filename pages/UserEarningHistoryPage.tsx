@@ -32,7 +32,8 @@ const UserEarningHistoryPage: React.FC = () => {
         const userSnap = await get(ref(rtdb, `users/${userId}/username`));
         const balanceSnap = await get(ref(rtdb, `users/${userId}/balance`));
         
-        setUserName(userSnap.exists() ? userSnap.val() : 'Unknown');
+        const name = userSnap.exists() ? userSnap.val() : (userId.length < 20 ? userId : 'Unknown');
+        setUserName(name);
         setBalance(balanceSnap.exists() ? balanceSnap.val() : 0);
       } catch (e) {
         setUserName('Unknown');
@@ -42,8 +43,7 @@ const UserEarningHistoryPage: React.FC = () => {
     // Fetch Earning History
     const q = query(
       collection(db, 'earning_history'),
-      where('userId', '==', userId),
-      orderBy('timestamp', 'desc')
+      where('userId', '==', userId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -51,13 +51,36 @@ const UserEarningHistoryPage: React.FC = () => {
         id: doc.id,
         ...doc.data()
       } as EarningHistory));
-      setHistory(data);
+      
+      // Sort in memory to avoid needing a composite index
+      const sortedData = data.sort((a, b) => {
+        const timeA = a.timestamp?.seconds || 0;
+        const timeB = b.timestamp?.seconds || 0;
+        return timeB - timeA;
+      });
+
+      setHistory(sortedData);
       setLoading(false);
+    }, (error) => {
+        console.error("Error fetching user earning history:", error);
+        setLoading(false);
     });
 
     fetchUserInfo();
     return () => unsubscribe();
   }, [userId]);
+
+  const formatDate = (ts: any) => {
+    if (!ts) return 'N/A';
+    try {
+        if (ts.toDate) return ts.toDate().toLocaleDateString();
+        if (ts.seconds) return new Date(ts.seconds * 1000).toLocaleDateString();
+        if (typeof ts === 'number') return new Date(ts).toLocaleDateString();
+        return 'N/A';
+    } catch (e) {
+        return 'N/A';
+    }
+  };
 
   if (loading) return <div className="flex justify-center py-20"><Spinner /></div>;
 
@@ -106,7 +129,7 @@ const UserEarningHistoryPage: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.description}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">Rs {item.amount.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-1">
-                        <Calendar size={14} /> {item.timestamp?.toDate().toLocaleDateString()}
+                        <Calendar size={14} /> {formatDate(item.timestamp)}
                     </td>
                     </tr>
                 ))}

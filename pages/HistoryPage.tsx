@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue, set, remove, get, update } from 'firebase/database';
-import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc } from 'firebase/firestore';
 import { rtdb, db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
