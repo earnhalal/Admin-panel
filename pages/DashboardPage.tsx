@@ -557,6 +557,15 @@ const DashboardPage: React.FC = () => {
               colorClass="bg-emerald-500 text-emerald-500"
           />
           <QuickActionCard 
+              title="Referral Report" 
+              description="Inviter performance"
+              count={null} 
+              link="/referral-report" 
+              icon={<Share2 />} 
+              loading={false} 
+              colorClass="bg-blue-600 text-blue-600"
+          />
+          <QuickActionCard 
               title="Team Manager" 
               description="Manage staff roles"
               count={null} 

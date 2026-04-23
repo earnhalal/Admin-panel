@@ -26,6 +26,7 @@ import HistoryPage from './pages/HistoryPage';
 import EarningHistoryPage from './pages/EarningHistoryPage';
 import UserEarningHistoryPage from './pages/UserEarningHistoryPage';
 import TeamPage from './pages/TeamPage';
+import ReferralReportPage from './pages/ReferralReportPage';
 
 const App: React.FC = () => {
   return (
@@ -52,6 +53,7 @@ const App: React.FC = () => {
               <Route path="lotteries" element={<LotteryManagementPage />} />
               <Route path="partner-program" element={<PartnerProgramPage />} />
               <Route path="referrals" element={<ReferralsPage />} />
+              <Route path="referral-report" element={<ReferralReportPage />} />
               <Route path="booster-store" element={<BoosterStorePage />} />
               <Route path="mailbox" element={<MailboxPage />} />
               <Route path="ai-automations" element={<AiAutomationsPage />} />
