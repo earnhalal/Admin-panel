@@ -23,7 +23,7 @@ const ReferralsPage: React.FC = () => {
                     <ul className="list-disc list-inside text-indigo-700 dark:text-indigo-400 space-y-1 text-sm">
                         <li>Go to <b>Users</b> or <b>Joining Approvals</b>.</li>
                         <li>Approve the user's payment request.</li>
-                        <li>The system instantly finds their inviter and credits Rs 125 to their RTDB balance!</li>
+                        <li>The system instantly finds their inviter and credits Rs 100 to their RTDB balance!</li>
                         <li>Use the "Sync Old Referrals" button in the Users page for old users.</li>
                     </ul>
                 </div>

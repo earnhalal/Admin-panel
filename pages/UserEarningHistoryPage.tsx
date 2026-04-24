@@ -12,6 +12,8 @@ interface EarningHistory {
   description: string;
   source: string;
   timestamp: Timestamp;
+  previousBalance?: number;
+  newBalance?: number;
 }
 
 const UserEarningHistoryPage: React.FC = () => {
@@ -20,6 +22,7 @@ const UserEarningHistoryPage: React.FC = () => {
   const [history, setHistory] = useState<EarningHistory[]>([]);
   const [userName, setUserName] = useState<string>('Loading...');
   const [balance, setBalance] = useState<number>(0);
+  const [totalEarnings, setTotalEarnings] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,10 +34,12 @@ const UserEarningHistoryPage: React.FC = () => {
         // Try RTDB first
         const userSnap = await get(ref(rtdb, `users/${userId}/username`));
         const balanceSnap = await get(ref(rtdb, `users/${userId}/balance`));
+        const totalEarnSnap = await get(ref(rtdb, `users/${userId}/totalEarnings`));
         
         const name = userSnap.exists() ? userSnap.val() : (userId.length < 20 ? userId : 'Unknown');
         setUserName(name);
         setBalance(balanceSnap.exists() ? balanceSnap.val() : 0);
+        setTotalEarnings(totalEarnSnap.exists() ? totalEarnSnap.val() : 0);
       } catch (e) {
         setUserName('Unknown');
       }
@@ -100,9 +105,23 @@ const UserEarningHistoryPage: React.FC = () => {
                 <p className="text-sm text-gray-500">User ID: {userId}</p>
             </div>
         </div>
-        <div className="text-center md:text-right">
-            <p className="text-sm text-gray-500 uppercase tracking-wider">Total Balance</p>
-            <p className="text-3xl font-bold text-green-600">Rs {balance.toFixed(2)}</p>
+        <div className="flex gap-6 text-center md:text-right">
+            <div>
+                <p className="text-sm text-gray-500 uppercase tracking-wider">Lifetime Earnings</p>
+                <p className="text-2xl font-bold text-indigo-600">Rs {totalEarnings.toFixed(2)}</p>
+            </div>
+            <div>
+                <p className="text-sm text-gray-500 uppercase tracking-wider">Current Balance</p>
+                <p className="text-3xl font-bold text-green-600">Rs {balance.toFixed(2)}</p>
+            </div>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 dark:bg-blue-900/20 p-4 flex gap-3 text-sm text-blue-700 dark:text-blue-300 rounded-xl">
+        <div className="mt-0.5">💡</div>
+        <div>
+           <strong>Why might 'Current Balance' differ from 'Lifetime Earnings'?</strong>
+           <p className="mt-1 opacity-90">Earning history shows all money earned through tasks and referrals. The "Current Balance" represents the active wallet balance, which reduces when the user withdraws funds and increases if administrators manually add deposits.</p>
         </div>
       </div>
 
@@ -116,20 +135,29 @@ const UserEarningHistoryPage: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
                 <thead className="bg-gray-50 dark:bg-slate-800">
                 <tr>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Source</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Description</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Amount</th>
                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Source & Description</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase text-right">Amount</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase text-right">Previous Bal.</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase text-right">Current Bal.</th>
                 </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                 {history.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{item.source}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">Rs {item.amount.toFixed(2)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-1">
-                        <Calendar size={14} /> {formatDate(item.timestamp)}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className="flex items-center gap-1"><Calendar size={14} /> {formatDate(item.timestamp)}</span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                        <div className="font-medium text-gray-900 dark:text-white mb-0.5">{item.source}</div>
+                        <div className="text-xs">{item.description}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600 text-right">+ Rs {item.amount.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                        {item.previousBalance !== undefined ? `Rs ${item.previousBalance.toFixed(2)}` : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium text-right">
+                        {item.newBalance !== undefined ? `Rs ${item.newBalance.toFixed(2)}` : 'N/A'}
                     </td>
                     </tr>
                 ))}

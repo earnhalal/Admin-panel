@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
-import { ref, remove } from 'firebase/database';
+import { ref, remove, get } from 'firebase/database';
 import { User } from './UsersPage';
 import { Task } from './SocialTasksPage';
 import { ArrowRightIcon } from '../components/icons/ArrowRightIcon';
@@ -45,8 +45,22 @@ const UserProfilePage: React.FC = () => {
             // Fetch User Details
             const userRef = doc(db, 'users', userId);
             const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-                setUser({ id: userSnap.id, ...userSnap.data() } as User);
+            let firestoreUser = userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } as User : null;
+
+            // Fetch RTDB User Details for absolute source of truth on balance
+            const userRtdbRef = ref(rtdb, `users/${userId}`);
+            const userRtdbSnap = await get(userRtdbRef);
+            if (userRtdbSnap.exists()) {
+                const rtdbData = userRtdbSnap.val();
+                if (firestoreUser) {
+                    firestoreUser = { ...firestoreUser, balance: rtdbData.balance || 0, status: rtdbData.status || firestoreUser.status };
+                } else {
+                    firestoreUser = { id: userId, balance: rtdbData.balance || 0, status: rtdbData.status } as User;
+                }
+            }
+
+            if (firestoreUser) {
+                setUser(firestoreUser);
             }
 
             // Fetch Transactions (Deposits & Withdrawals)
@@ -172,9 +186,12 @@ const UserProfilePage: React.FC = () => {
                         <p className="text-gray-500 dark:text-gray-400">Withdrawal Points</p>
                         <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{user.withdrawalPoints || 0}</p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex flex-col items-end">
                         <p className="text-gray-500 dark:text-gray-400">Current Balance</p>
-                        <p className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {(user.balance ?? 0).toFixed(2)}</p>
+                        <p className="text-3xl font-bold text-green-600 dark:text-green-400 mb-2">Rs {(user.balance ?? 0).toFixed(2)}</p>
+                        <Link to={`/earning-history/${user.id}`} className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium hover:underline">
+                            View Earning History &rarr;
+                        </Link>
                     </div>
                  </div>
             </div>

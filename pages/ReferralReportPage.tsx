@@ -385,7 +385,7 @@ const ReferralReportPage: React.FC = () => {
                         </li>
                         <li className="flex items-start gap-3 text-sm text-indigo-200/70">
                             <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0"></div>
-                            <b>Earnings:</b> Sum of Rs 125 for every 'Paid' status referral in the inviter's history.
+                            <b>Earnings:</b> Sum of Rs 100 for every 'Paid' status referral in the inviter's history.
                         </li>
                     </ul>
                 </div>

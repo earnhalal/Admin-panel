@@ -136,7 +136,38 @@ const SocialTaskSubmissionsPage: React.FC = () => {
                 status: 'approved',
                 approvedAt: Timestamp.now()
             });
+
+            const earningHistoryRef = doc(collection(db, 'earning_history'));
+            transaction.set(earningHistoryRef, {
+                userId: submission.userId,
+                amount: submission.reward,
+                source: 'Social Task',
+                description: `Reward for task: ${submission.taskTitle}`,
+                timestamp: Timestamp.now(),
+                previousBalance: currentBalance,
+                newBalance: newBalance
+            });
         });
+        
+        // Also update RTDB directly
+        try {
+            const { ref: dbRef, set: dbSet } = await import('firebase/database');
+            const { rtdb } = await import('../services/firebase');
+            const rtdbBalanceRef = dbRef(rtdb, `users/${submission.userId}/balance`);
+            const rtdbUserRef = dbRef(rtdb, `users/${submission.userId}`);
+            
+            const rtdbGet = (await import('firebase/database')).get;
+            const rtdbIncrement = (await import('firebase/database')).increment;
+            const rtdbUpdate = (await import('firebase/database')).update;
+            
+            await rtdbUpdate(rtdbUserRef, {
+                balance: rtdbIncrement(submission.reward),
+                totalEarnings: rtdbIncrement(submission.reward)
+            });
+        } catch(e) {
+            console.error("Failed to update RTDB balance", e);
+        }
+
         addToast("Submission approved and reward added!", "success");
     } catch (error) {
         const message = error instanceof Error ? error.message : "An unknown error occurred.";

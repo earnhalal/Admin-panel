@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc, getDoc, getDocs, increment } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc, getDoc, getDocs, increment, addDoc } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
 import { ref, onValue, set, remove, get, update, increment as rtdbIncrement } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
@@ -307,27 +307,50 @@ const DashboardPage: React.FC = () => {
         let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
         
         if (referrerUid) {
-            const rewardAmount = 125;
-            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
-                status: 'paid',
-                paidAt: Date.now(),
-                commission: rewardAmount
-            });
-            
-            await update(ref(rtdb, `users/${referrerUid}`), {
-                balance: rtdbIncrement(rewardAmount),
-                totalEarnings: rtdbIncrement(rewardAmount),
-                inviteCount: rtdbIncrement(1),
-                activeMembers: rtdbIncrement(1)
-            });
+            const rewardAmount = 100;
+            const invitePath = `invites/${referrerUid}/history/${userId}`;
+            const inviteSnap = await get(ref(rtdb, invitePath));
 
-            try {
-                await updateDoc(doc(db, 'users', referrerUid), { 
-                    balance: increment(rewardAmount),
-                    totalEarnings: increment(rewardAmount),
-                    'referralStats.activeMembers': increment(1)
+            if (!(inviteSnap.exists() && inviteSnap.val().status === 'paid')) {
+                // Get previous balance before update
+                const referrerRtdbRef = ref(rtdb, `users/${referrerUid}`);
+                const referrerSnap = await get(referrerRtdbRef);
+                const prevBalance = referrerSnap.exists() ? (referrerSnap.val().balance || 0) : 0;
+                const newBalance = prevBalance + rewardAmount;
+
+                await update(ref(rtdb, invitePath), { 
+                    status: 'paid',
+                    paidAt: Date.now(),
+                    commission: rewardAmount
                 });
-            } catch (e) {}
+                
+                await update(ref(rtdb, `users/${referrerUid}`), {
+                    balance: rtdbIncrement(rewardAmount),
+                    totalEarnings: rtdbIncrement(rewardAmount),
+                    inviteCount: rtdbIncrement(1),
+                    activeMembers: rtdbIncrement(1)
+                });
+
+                try {
+                    await updateDoc(doc(db, 'users', referrerUid), { 
+                        balance: increment(rewardAmount),
+                        totalEarnings: increment(rewardAmount),
+                        'referralStats.activeMembers': increment(1)
+                    });
+                } catch (e) {}
+
+                try {
+                    await addDoc(collection(db, 'earning_history'), {
+                        userId: referrerUid,
+                        amount: rewardAmount,
+                        source: 'Referral Bonus',
+                        description: `Bonus for referring user ${userId}`,
+                        timestamp: Timestamp.now(),
+                        previousBalance: prevBalance,
+                        newBalance: newBalance
+                    });
+                } catch (e) {}
+            }
         }
         
         // 4. Remove pending request from RTDB

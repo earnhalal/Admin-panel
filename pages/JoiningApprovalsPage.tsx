@@ -229,53 +229,67 @@ const JoiningApprovalsPage: React.FC = () => {
         let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
         
         if (referrerUid) {
-            const rewardAmount = 125;
-            
-            // 1. RTDB Referral Status Update
-            console.log(`Debug: referrerUid is: ${referrerUid}, userId is: ${userId}`);
+            const rewardAmount = 100;
             const invitePath = `invites/${referrerUid}/history/${userId}`;
-            console.log(`Debug: Updating path: ${invitePath}`);
-            await update(ref(rtdb, invitePath), { 
-                status: 'paid',
-                paidAt: serverTimestamp(),
-                commission: rewardAmount
-            });
-            console.log(`Debug: Update successful for path: ${invitePath}`);
             
-            // 2. RTDB Stats Update
-            console.log(`Debug: Updating RTDB stats for referrer: ${referrerUid}, adding ${rewardAmount} to balance`);
-            await update(ref(rtdb, `users/${referrerUid}`), {
-                balance: rtdbIncrement(rewardAmount),
-                totalEarnings: rtdbIncrement(rewardAmount),
-                inviteCount: rtdbIncrement(1),
-                activeMembers: rtdbIncrement(1),
-                totalCommission: rtdbIncrement(rewardAmount)
-            });
-            console.log(`Debug: RTDB stats update initiated for ${referrerUid}`);
-
-            // 3. Firestore Stats Update (Sync)
-            try {
-                const inviterRef = doc(db, 'users', referrerUid);
-                await updateDoc(inviterRef, { 
-                    balance: increment(rewardAmount),
-                    totalEarnings: increment(rewardAmount),
-                    'referralStats.activeMembers': increment(1),
-                    'referralStats.totalCommission': increment(rewardAmount)
+            // Double-credit protection: Check if already paid
+            const inviteSnap = await get(ref(rtdb, invitePath));
+            if (inviteSnap.exists() && inviteSnap.val().status === 'paid') {
+                console.log(`Debug: Referral ${userId} already paid in RTDB, skipping double credit.`);
+            } else {
+                // 1. RTDB Referral Status Update
+                console.log(`Debug: referrerUid is: ${referrerUid}, userId is: ${userId}`);
+                console.log(`Debug: Updating path: ${invitePath}`);
+                await update(ref(rtdb, invitePath), { 
+                    status: 'paid',
+                    paidAt: serverTimestamp(),
+                    commission: rewardAmount
                 });
-            } catch (e) {
-               // Ignore if inviter is only in RTDB
+                console.log(`Debug: Update successful for path: ${invitePath}`);
+                
+                // Get previous balance before update
+                const referrerRtdbRef = ref(rtdb, `users/${referrerUid}`);
+                const referrerSnap = await get(referrerRtdbRef);
+                const prevBalance = referrerSnap.exists() ? (referrerSnap.val().balance || 0) : 0;
+                const newBalance = prevBalance + rewardAmount;
+
+                // 2. RTDB Stats Update
+                console.log(`Debug: Updating RTDB stats for referrer: ${referrerUid}, adding ${rewardAmount} to balance`);
+                await update(ref(rtdb, `users/${referrerUid}`), {
+                    balance: rtdbIncrement(rewardAmount),
+                    totalEarnings: rtdbIncrement(rewardAmount),
+                    inviteCount: rtdbIncrement(1),
+                    activeMembers: rtdbIncrement(1),
+                    totalCommission: rtdbIncrement(rewardAmount)
+                });
+                console.log(`Debug: RTDB stats update initiated for ${referrerUid}`);
+
+                // 3. Firestore Stats Update (Sync)
+                try {
+                    const inviterRef = doc(db, 'users', referrerUid);
+                    await updateDoc(inviterRef, { 
+                        balance: increment(rewardAmount),
+                        totalEarnings: increment(rewardAmount),
+                        'referralStats.activeMembers': increment(1),
+                        'referralStats.totalCommission': increment(rewardAmount)
+                    });
+                } catch (e) {
+                   // Ignore if inviter is only in RTDB
+                }
+
+                // 4. Earning History in Firestore
+                try {
+                    await addDoc(collection(db, 'earning_history'), {
+                        userId: referrerUid,
+                        amount: rewardAmount,
+                        source: 'Referral Bonus',
+                        description: 'Bonus for referring a new user',
+                        timestamp: Timestamp.now(),
+                        previousBalance: prevBalance,
+                        newBalance: newBalance
+                    });
+                } catch (e) {}
             }
-
-            // 4. Earning History in Firestore
-            try {
-                await addDoc(collection(db, 'earning_history'), {
-                    userId: referrerUid,
-                    amount: rewardAmount,
-                    source: 'Referral Bonus',
-                    description: 'Bonus for referring a new user',
-                    timestamp: Timestamp.now()
-                });
-            } catch (e) {}
         }
 
         // 4. Move to approved_history

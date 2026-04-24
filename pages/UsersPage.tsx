@@ -242,47 +242,60 @@ const UsersPage: React.FC = () => {
         let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
         
         if (referrerUid) {
-            const rewardAmount = 125;
+            const rewardAmount = 100;
+            const invitePath = `invites/${referrerUid}/history/${userId}`;
             
-            // 1. RTDB Referral Status Update
-            await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
-                status: 'paid',
-                paidAt: serverTimestamp(),
-                commission: rewardAmount
-            });
-            
-            // 2. RTDB Stats Update
-            await update(ref(rtdb, `users/${referrerUid}`), {
-                balance: rtdbIncrement(rewardAmount),
-                totalEarnings: rtdbIncrement(rewardAmount),
-                inviteCount: rtdbIncrement(1),
-                activeMembers: rtdbIncrement(1),
-                totalCommission: rtdbIncrement(rewardAmount)
-            });
+            // Double-credit protection: Check if already paid
+            const inviteSnap = await get(ref(rtdb, invitePath));
+            if (!(inviteSnap.exists() && inviteSnap.val().status === 'paid')) {
+                // 1. RTDB Referral Status Update
+                await update(ref(rtdb, invitePath), { 
+                    status: 'paid',
+                    paidAt: serverTimestamp(),
+                    commission: rewardAmount
+                });
+                
+                // Get previous balance before update
+                const referrerRtdbRef = ref(rtdb, `users/${referrerUid}`);
+                const referrerSnap = await get(referrerRtdbRef);
+                const prevBalance = referrerSnap.exists() ? (referrerSnap.val().balance || 0) : 0;
+                const newBalance = prevBalance + rewardAmount;
 
-            // 3. Firestore Updates (Sync)
-            try {
-                const inviterRef = doc(db, 'users', referrerUid);
-                await updateDoc(inviterRef, { 
-                    balance: increment(rewardAmount),
-                    totalEarnings: increment(rewardAmount),
-                    'referralStats.activeMembers': increment(1),
-                    'referralStats.totalCommission': increment(rewardAmount)
+                // 2. RTDB Stats Update
+                await update(ref(rtdb, `users/${referrerUid}`), {
+                    balance: rtdbIncrement(rewardAmount),
+                    totalEarnings: rtdbIncrement(rewardAmount),
+                    inviteCount: rtdbIncrement(1),
+                    activeMembers: rtdbIncrement(1),
+                    totalCommission: rtdbIncrement(rewardAmount)
                 });
-            } catch (e) {
-               // Ignore if inviter is only in RTDB
+
+                // 3. Firestore Updates (Sync)
+                try {
+                    const inviterRef = doc(db, 'users', referrerUid);
+                    await updateDoc(inviterRef, { 
+                        balance: increment(rewardAmount),
+                        totalEarnings: increment(rewardAmount),
+                        'referralStats.activeMembers': increment(1),
+                        'referralStats.totalCommission': increment(rewardAmount)
+                    });
+                } catch (e) {
+                   // Ignore if inviter is only in RTDB
+                }
+                
+                // 4. Earning History in Firestore
+                try {
+                    await addDoc(collection(db, 'earning_history'), {
+                        userId: referrerUid,
+                        amount: rewardAmount,
+                        source: 'Referral Bonus',
+                        description: `Bonus for referring user ${userId}`,
+                        timestamp: Timestamp.now(),
+                        previousBalance: prevBalance,
+                        newBalance: newBalance
+                    });
+                } catch (e) {}
             }
-            
-            // 4. Earning History in Firestore
-            try {
-                await addDoc(collection(db, 'earning_history'), {
-                    userId: referrerUid,
-                    amount: rewardAmount,
-                    source: 'Referral Bonus',
-                    description: `Bonus for referring user ${userId}`,
-                    timestamp: Timestamp.now()
-                });
-            } catch (e) {}
         }
         
         addToast("Payment verified and referral processed!", "success");
@@ -396,7 +409,7 @@ const UsersPage: React.FC = () => {
 
                   if (!alreadyPaid) {
                       try {
-                          const rewardAmount = 125;
+                          const rewardAmount = 100;
                   
                           // 1. RTDB Referral Status Update
                           await update(ref(rtdb, `invites/${referrerUid}/history/${userId}`), { 
@@ -405,6 +418,12 @@ const UsersPage: React.FC = () => {
                               commission: rewardAmount
                           });
                           
+                          // Get previous balance before update
+                          const referrerRtdbRef = ref(rtdb, `users/${referrerUid}`);
+                          const referrerSnap = await get(referrerRtdbRef);
+                          const prevBalance = referrerSnap.exists() ? (referrerSnap.val().balance || 0) : 0;
+                          const newBalance = prevBalance + rewardAmount;
+
                           // 2. RTDB Stats Update
                           await update(ref(rtdb, `users/${referrerUid}`), {
                               balance: rtdbIncrement(rewardAmount),
@@ -431,7 +450,9 @@ const UsersPage: React.FC = () => {
                                   amount: rewardAmount,
                                   source: 'Referral Bonus',
                                   description: `Retroactive bonus for referring user ${rData.username || rData.name || 'Old User'}`,
-                                  timestamp: Timestamp.now()
+                                  timestamp: Timestamp.now(),
+                                  previousBalance: prevBalance,
+                                  newBalance: newBalance
                               });
                           } catch (e) {}
 
