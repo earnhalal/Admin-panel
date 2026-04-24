@@ -97,10 +97,10 @@ const WithdrawalsPage: React.FC = () => {
                 createdAt,
                 status: (data.status || 'pending').toLowerCase(),
                 withdrawalDetails: {
-                    method: details.method || data.method || 'N/A',
-                    accountName: details.accountName || data.accountName || 'N/A',
-                    accountNumber: details.accountNumber || data.accountNumber || 'N/A',
-                    bankName: details.bankName || data.bankName || ''
+                    method: details.method || data.method || data.paymentMethod || data.payment_method || 'N/A',
+                    accountName: details.accountName || details.holder_name || details.account_holder || data.accountName || data.account_name || data.accountHolder || data.holderName || data.name || details.account || userData.accountName || userData.holderName || userData.account_name || userData.username || userData.name || 'N/A',
+                    accountNumber: details.accountNumber || details.number || details.phone || data.accountNumber || data.account_number || data.account_no || data.phone || data.mobile || data.account || data.id || userData.accountNumber || userData.number || userData.phone || 'N/A',
+                    bankName: details.bankName || data.bankName || userData.bankName || ''
                 }
             } as WithdrawalRequest);
         });
