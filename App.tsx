@@ -28,6 +28,7 @@ import UserEarningHistoryPage from './pages/UserEarningHistoryPage';
 import TeamPage from './pages/TeamPage';
 import ReferralReportPage from './pages/ReferralReportPage';
 import UserReferralDetailPage from './pages/UserReferralDetailPage';
+import MaintenancePage from './pages/MaintenancePage';
 
 const App: React.FC = () => {
   return (
@@ -63,6 +64,7 @@ const App: React.FC = () => {
               <Route path="settings" element={<SettingsPage />} />
               <Route path="revenue" element={<RevenuePage />} />
               <Route path="team" element={<TeamPage />} />
+              <Route path="maintenance" element={<MaintenancePage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
