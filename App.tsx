@@ -21,6 +21,7 @@ import SocialTasksPage from './pages/SocialTasksPage';
 import SocialTaskSubmissionsPage from './pages/SocialTaskSubmissionsPage';
 import JoiningApprovalsPage from './pages/JoiningApprovalsPage';
 import PartnerProgramPage from './pages/PartnerProgramPage';
+import PartnerProfilesPage from './pages/PartnerProfilesPage';
 import LotteryManagementPage from './pages/LotteryManagementPage';
 import HistoryPage from './pages/HistoryPage';
 import EarningHistoryPage from './pages/EarningHistoryPage';
@@ -54,6 +55,7 @@ const App: React.FC = () => {
               <Route path="earning-history/:userId" element={<UserEarningHistoryPage />} />
               <Route path="lotteries" element={<LotteryManagementPage />} />
               <Route path="partner-program" element={<PartnerProgramPage />} />
+              <Route path="partner-profiles" element={<PartnerProfilesPage />} />
               <Route path="referrals" element={<ReferralsPage />} />
               <Route path="referral-report" element={<ReferralReportPage />} />
               <Route path="referral-report/:userId" element={<UserReferralDetailPage />} />

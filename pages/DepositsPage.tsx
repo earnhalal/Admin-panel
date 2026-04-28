@@ -90,9 +90,9 @@ const DepositsPage: React.FC = () => {
             const rawStatus = data.status || data.Status || 'pending';
             const status = rawStatus.toLowerCase();
             
-            // Filter out 'activation' type deposits as they belong in Joining Approvals
-            const type = data.type || 'deposit';
-            if (status === filter && type !== 'activation') {
+            // Filter: only show 'deposit' type
+            const type = (data.type || 'deposit').toLowerCase();
+            if (status === filter && type === 'deposit') {
                 const userData = userMap[data.userId] || {};
                 const name = userData.username || userData.userName || userData.name || userData.displayName || data.userName || data.username || 'Anonymous';
                 const email = userData.email || data.userEmail || data.email || 'N/A';

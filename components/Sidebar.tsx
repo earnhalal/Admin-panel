@@ -20,6 +20,7 @@ import {
   Handshake,
   Ticket,
   History,
+  Award,
   Megaphone,
   Globe,
   Users2
@@ -125,8 +126,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/lotteries" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Ticket size={18} className="mr-3" /> Lotteries
           </NavLink>
-          <NavLink to="/referrals" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+          <NavLink to="/partner-program" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Handshake size={18} className="mr-3" /> Partner Program
+          </NavLink>
+          <NavLink to="/partner-profiles" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Award size={18} className="mr-3" /> Partner Profiles
           </NavLink>
           <NavLink to="/referral-report" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Share2 size={18} className="mr-3" /> Referral Report

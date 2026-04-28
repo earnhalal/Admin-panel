@@ -34,6 +34,7 @@ const JoiningApprovalsPage: React.FC = () => {
     const pendingRef = ref(rtdb, 'pending_requests');
     const unsubRTDB = onValue(pendingRef, async (snapshot) => {
         const data = snapshot.val();
+        console.log("RTDB pending_requests update:", data);
         const rtdbList: PendingRequest[] = [];
         if (data) {
             const promises = Object.entries(data).map(async ([key, value]: [string, any]) => {
@@ -52,10 +53,16 @@ const JoiningApprovalsPage: React.FC = () => {
             rtdbList.push(...await Promise.all(promises));
         }
         setRequests(prev => {
+            // Keep only firestore items from previous state, 
+            // merge with new RTDB list
             const firestoreOnly = prev.filter(r => (r as any).source === 'firestore');
-            return [...rtdbList, ...firestoreOnly];
+            const merged = [...rtdbList, ...firestoreOnly];
+            console.log("New requests state (merged):", merged);
+            return merged;
         });
         setLoading(false);
+    }, (error) => {
+        console.error("Error fetching RTDB pending_requests:", error);
     });
 
     // 2. Listen to Firestore for deposits with type 'activation'
@@ -63,6 +70,7 @@ const JoiningApprovalsPage: React.FC = () => {
     const q = query(depositsRef, where('type', '==', 'activation'));
     
     const unsubFirestore = onSnapshot(q, async (snapshot) => {
+        console.log("Firestore deposits update");
         const fsList: PendingRequest[] = [];
         const userIds = new Set<string>();
         
@@ -104,8 +112,12 @@ const JoiningApprovalsPage: React.FC = () => {
 
         setRequests(prev => {
             const rtdbOnly = prev.filter(r => (r as any).source === 'rtdb');
-            return [...rtdbOnly, ...fsList];
+            const merged = [...rtdbOnly, ...fsList];
+            console.log("New requests state (merged fs):", merged);
+            return merged;
         });
+    }, (error) => {
+        console.error("Error fetching Firestore deposits:", error);
     });
 
     return () => {
@@ -117,7 +129,7 @@ const JoiningApprovalsPage: React.FC = () => {
   const handleApprove = async (request: PendingRequest) => {
     const { userId, id } = request;
     const isFirestore = (request as any).source === 'firestore';
-    setActionLoading(prev => ({...prev, [id]: true}));
+    setActionLoading(prev => ({...prev, [userId]: true}));
     try {
         // 1. Update status in RTDB
         const userRtdbRef = ref(rtdb, 'users/' + userId);
@@ -294,42 +306,55 @@ const JoiningApprovalsPage: React.FC = () => {
 
         // 4. Move to approved_history
         const approvedData = { ...request, approvedAt: Date.now() };
+        // Remove undefined values
+        Object.keys(approvedData).forEach(key => (approvedData as any)[key] === undefined && delete (approvedData as any)[key]);
+        
         await set(ref(rtdb, 'approved_history/' + id), approvedData);
 
         // 5. Remove from source
         if (isFirestore) {
             await updateDoc(doc(db, 'deposits', id), { status: 'approved', approvedAt: Timestamp.now() });
         } else {
-            await remove(ref(rtdb, 'pending_requests/' + id));
+            console.log(`Setting pending_requests/${id} to null`);
+            await set(ref(rtdb, 'pending_requests/' + id), null);
         }
         
+        setRequests(prev => prev.filter(req => req.id !== id));
         addToast("Account activated successfully!", "success");
     } catch(error) {
         addToast("Failed to approve account.", "error");
     } finally {
-        setActionLoading(prev => ({...prev, [id]: false}));
+        setActionLoading(prev => ({...prev, [userId]: false}));
     }
   };
 
   const handleReject = async (request: PendingRequest) => {
-    const { id } = request;
+    const { userId, id } = request;
     const isFirestore = (request as any).source === 'firestore';
-    setActionLoading(prev => ({...prev, [id]: true}));
+    console.log(`Rejecting: ${userId}, ID: ${id}, isFirestore: ${isFirestore}`);
+    
+    setActionLoading(prev => ({...prev, [userId]: true}));
     try {
         const rejectedData = { ...request, rejectedAt: Date.now() };
+        // Remove undefined values
+        Object.keys(rejectedData).forEach(key => (rejectedData as any)[key] === undefined && delete (rejectedData as any)[key]);
+        
         await set(ref(rtdb, 'rejected_history/' + id), rejectedData);
 
         if (isFirestore) {
             await updateDoc(doc(db, 'deposits', id), { status: 'rejected', rejectedAt: Timestamp.now() });
         } else {
-            await remove(ref(rtdb, 'pending_requests/' + id));
+            console.log(`Setting pending_requests/${id} to null`);
+            await set(ref(rtdb, 'pending_requests/' + id), null);
         }
         
+        setRequests(prev => prev.filter(req => req.id !== id));
         addToast("Request rejected.", "success");
     } catch (error) {
+        console.error("Failed to reject:", error);
         addToast("Failed to reject request.", "error");
     } finally {
-        setActionLoading(prev => ({...prev, [id]: false}));
+        setActionLoading(prev => ({...prev, [userId]: false}));
     }
   };
 
