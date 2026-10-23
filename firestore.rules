@@ -98,6 +98,8 @@ service cloud.firestore {
 
     // ---- Admin mailbox archive ----
     match /mails/{id} {
+    match /agent_settings/{id} { allow read, write: if isAdmin(); }
+    match /agent_logs/{id} { allow read, write: if isAdmin(); }
       allow read, write: if isStaff();
     }
 
