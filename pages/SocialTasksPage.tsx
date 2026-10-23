@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, where, getDoc, getDocs } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, where, getDoc, getDocs, increment, setDoc } from 'firebase/firestore';
+import { db, rtdb } from '../services/firebase';
+import { ref as rtdbRef, get as rtdbGet, update as rtdbUpdate, increment as rtdbIncrement } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import { 
     Globe, 
@@ -66,6 +67,11 @@ interface PromotionOrder {
   link: string;
   platform: string;
   totalLimit: number;
+  price?: number;
+  quantity?: number;
+  unitPrice?: number;
+  service?: string;
+  username?: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: Timestamp;
   userName?: string;
@@ -277,13 +283,31 @@ const SocialTasksPage: React.FC = () => {
   const handleApproveOrder = async (order: PromotionOrder) => {
     setActionLoading(prev => ({...prev, [order.id]: true}));
     try {
+        // Real quantity the user paid for (older orders may only have totalLimit)
+        const quantity = order.quantity || order.totalLimit || 100;
+        const gross = order.price || 0;
+        const unitPrice = order.unitPrice || (quantity > 0 ? gross / quantity : 0);
+
+        // Platform commission rate from settings (taskCommissionRate %), default 10%
+        let commissionRate = 10;
+        try {
+            const rateSnap = await rtdbGet(rtdbRef(rtdb, 'settings/taskCommissionRate'));
+            if (rateSnap.exists() && !isNaN(Number(rateSnap.val()))) commissionRate = Number(rateSnap.val());
+        } catch (e) {}
+        const commission = Math.round(gross * commissionRate) / 100;
+        // Workers earn the unit price minus the platform commission; legacy
+        // orders without a price keep the old flat Rs. 0.20 reward.
+        const workerReward = unitPrice > 0
+            ? Math.max(0.05, Math.round(unitPrice * (100 - commissionRate)) / 100)
+            : (order.reward || 0.20);
+
         await addDoc(collection(db, 'social_tasks'), {
             title: order.title || 'Untitled',
             description: order.description || '',
             platform: (order.platform as TaskType) || 'other',
-            reward: order.reward || 0.20,
+            reward: workerReward,
             link: order.link || '',
-            totalLimit: order.totalLimit || 100,
+            totalLimit: quantity,
             views: 0,
             status: 'active',
             createdAt: Timestamp.now(),
@@ -293,8 +317,23 @@ const SocialTasksPage: React.FC = () => {
 
         await updateDoc(doc(db, 'promotion_orders', order.id), {
             status: 'approved',
-            approvedAt: Timestamp.now()
+            approvedAt: Timestamp.now(),
+            quantity,
+            workerReward,
+            adminCommission: commission
         });
+
+        // Record the platform commission so it shows on the Revenue page
+        if (commission > 0) {
+            await addDoc(collection(db, 'revenueTransactions'), {
+                adminFeeAmount: commission,
+                originalAmount: gross,
+                sourceUser: order.userId,
+                timestamp: Timestamp.now(),
+                transactionType: 'task_commission',
+                relatedDocId: order.id
+            });
+        }
 
         addToast("Promotion approved and added to tasks!", "success");
     } catch (error: any) {
@@ -307,11 +346,33 @@ const SocialTasksPage: React.FC = () => {
   const handleRejectOrder = async (orderId: string) => {
     setActionLoading(prev => ({...prev, [orderId]: true}));
     try {
-        await updateDoc(doc(db, 'promotion_orders', orderId), { 
+        const order = orders.find(o => o.id === orderId);
+        await updateDoc(doc(db, 'promotion_orders', orderId), {
             status: 'rejected',
             rejectedAt: Timestamp.now()
         });
-        addToast("Order rejected.", "success");
+
+        // Refund the upfront-paid price — the user paid when placing the order.
+        if (order && order.price && order.price > 0 && order.userId) {
+            await rtdbUpdate(rtdbRef(rtdb, `users/${order.userId}`), {
+                balance: rtdbIncrement(order.price)
+            });
+            try {
+                await updateDoc(doc(db, 'users', order.userId), { balance: increment(order.price) });
+            } catch (e) {
+                await setDoc(doc(db, 'users', order.userId), { balance: increment(order.price) }, { merge: true });
+            }
+            await updateDoc(doc(db, 'promotion_orders', orderId), { refundedAmount: order.price });
+            await addDoc(collection(db, 'notifications'), {
+                userId: order.userId,
+                title: 'Promotion Order Rejected',
+                message: `Your promotion order (${order.service || order.title || 'Promotion'}) was not approved. Rs. ${order.price} has been refunded to your TaskMint balance.`,
+                type: 'promotion',
+                status: 'unread',
+                timestamp: new Date().toISOString()
+            });
+        }
+        addToast("Order rejected and refunded.", "success");
     } catch (error) {
         addToast("Failed to reject.", "error");
     } finally {
