@@ -50,6 +50,17 @@ const MailboxPage: React.FC = () => {
         createdAt: serverTimestamp(),
         sentBy: 'Admin'
       });
+
+      // Also deliver it into the user app: users read 'notifications', not 'mails'.
+      // userId 'all' is the broadcast channel the user app listens to.
+      await addDoc(collection(db, 'notifications'), {
+        userId: 'all',
+        title: title.trim(),
+        message: body.trim(),
+        type: 'admin',
+        status: 'unread',
+        timestamp: new Date().toISOString()
+      });
       showToast("Mail sent successfully to all users!", "success");
       setTitle('');
       setBody('');

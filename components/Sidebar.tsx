@@ -65,13 +65,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       ></div>
 
       {/* Sidebar Container */}
-      <aside className={`fixed top-0 left-0 h-full w-72 bg-slate-950 border-r border-slate-800 flex flex-col z-50 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 h-full w-72 bg-[#0B0D10] border-r border-white/10 flex flex-col z-50 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         
         {/* Header */}
         <div className="flex justify-between items-center h-16 px-6 border-b border-slate-800/50">
           <div className="flex items-center gap-2">
-             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-900/50">TM</div>
-             <span className="text-lg font-bold text-white tracking-tight">TaskMint</span>
+             <div className="w-9 h-9 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-emerald-500/25">TM</div>
+             <div className="leading-tight">
+               <span className="block text-base font-bold text-white tracking-tight">TaskMint</span>
+               <span className="block text-[10px] font-semibold text-emerald-400 uppercase tracking-widest">Admin Console</span>
+             </div>
           </div>
           <button onClick={onClose} className="md:hidden text-gray-400 hover:text-white p-2 rounded-lg hover:bg-slate-800">
              <X size={20} />

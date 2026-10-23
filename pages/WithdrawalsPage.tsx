@@ -10,7 +10,7 @@ import {
   Check,
   RefreshCcw
 } from 'lucide-react';
-import { collection, onSnapshot, doc, updateDoc, getDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, orderBy, Timestamp, increment } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
 import { ref, get, set } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
@@ -170,6 +170,13 @@ const WithdrawalsPage: React.FC = () => {
         const balanceSnap = await get(balanceRef);
         const currentBalance = balanceSnap.val() || 0;
         await set(balanceRef, currentBalance + amount);
+
+        // 2b. Mirror the refund into Firestore so both ledgers stay in sync
+        try {
+            await updateDoc(doc(db, 'users', userId), { balance: increment(amount) });
+        } catch (e) {
+            await setDoc(doc(db, 'users', userId), { balance: increment(amount) }, { merge: true });
+        }
         
         addToast('Withdrawal rejected and funds returned.', 'success');
     } catch (error) {
