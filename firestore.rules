@@ -1,76 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {uid}
-    // Fields:
-    //   - email: string (required)
-    //   - username: string (required)
-    //   - balance: number (required)
-    //   - paymentStatus: string (required) - e.g., 'pending', 'verified'
-    //   - role: string (required) - e.g., 'user', 'admin'
-    //   - createdAt: timestamp (required)
-    //
-    // Collection: withdrawals
-    // Document ID: auto-generated
-    // Fields:
-    //   - userId: string (required)
-    //   - amount: number (required)
-    //   - status: string (required) - e.g., 'pending', 'approved', 'rejected'
-    //   - method: string (required)
-    //   - accountDetails: string (required)
-    //   - createdAt: timestamp (required)
-    //   - processedAt: timestamp (optional)
-    //   - transactionId: string (optional)
-    //
-    // Collection: userTasks
-    // Document ID: auto-generated
-    // Fields:
-    //   - userId: string (required)
-    //   - taskId: string (required)
-    //   - status: string (required) - e.g., 'submitted', 'approved', 'rejected'
-    //   - proof: string (optional)
-    //   - submittedAt: timestamp (required)
-    //
-    // Collection: referrals
-    // Document ID: auto-generated
-    // Fields:
-    //   - referrerId: string (required)
-    //   - referredId: string (required)
-    //   - status: string (required) - e.g., 'pending_bonus', 'bonus_paid'
-    //   - createdAt: timestamp (required)
-    //
-    // Collection: tasks
-    // Document ID: auto-generated
-    // Fields:
-    //   - title: string (required)
-    //   - description: string (required)
-    //   - reward: number (required)
-    //   - status: string (required) - e.g., 'active', 'pending'
-    //   - createdAt: timestamp (required)
-    //
-    // Collection: lotteries
-    // Document ID: auto-generated
-    // Fields:
-    //   - entryFee: number (required)
-    //   - prizePool: number (required)
-    //   - maxMembers: number (required)
-    //   - currentMembers: number (required)
-    //   - status: string (required) - e.g., 'active', 'closed'
-    //   - colorTheme: string (required)
-    //   - createdAt: timestamp (required)
-    //
-    // ===============================================================
 
     // ===============================================================
-    // Helper Functions
+    // TaskMint rules — aligned with the real user app + admin panel
+    // (rewritten 2026-10-24; the previous file described a data model
+    //  the apps do not actually use and would have blocked the app's
+    //  own balance updates, withdrawal creation and history reads)
     // ===============================================================
-    
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -80,142 +18,179 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          request.auth.token.email == "r83842009@gmail.com" ||
-         (exists(/databases/$(database)/documents/team/$(request.auth.token.email)) && 
+         (exists(/databases/$(database)/documents/team/$(request.auth.token.email)) &&
           get(/databases/$(database)/documents/team/$(request.auth.token.email)).data.role == 'admin'));
     }
 
     function hasRole(role) {
-      return isAuthenticated() && 
-        (isAdmin() || 
-         (exists(/databases/$(database)/documents/team/$(request.auth.token.email)) && 
+      return isAuthenticated() &&
+        (isAdmin() ||
+         (exists(/databases/$(database)/documents/team/$(request.auth.token.email)) &&
           get(/databases/$(database)/documents/team/$(request.auth.token.email)).data.role == role));
     }
 
     function isManager() { return hasRole('manager'); }
     function isEditor() { return hasRole('editor'); }
     function isPaymentManager() { return hasRole('payment_manager'); }
+    function isStaff() { return isAdmin() || isManager() || isEditor() || isPaymentManager(); }
 
-    function isValidUser(data) {
-      return data.keys().hasAll(['email', 'username', 'balance', 'role', 'createdAt']) &&
-             data.email is string && data.email.size() < 100 &&
-             data.username is string && data.username.size() < 50 &&
-             data.balance is number &&
-             data.role in ['user', 'admin'] &&
-             data.createdAt is timestamp;
-    }
-
-    function isValidWithdrawal(data) {
-      return data.keys().hasAll(['userId', 'amount', 'status', 'method', 'accountDetails', 'createdAt']) &&
-             data.userId == request.auth.uid &&
-             data.amount is number && data.amount > 0 &&
-             data.status == 'pending' &&
-             data.method is string &&
-             data.accountDetails is string && data.accountDetails.size() < 500 &&
-             data.createdAt is timestamp;
-    }
-
-    // ===============================================================
-    // Rules
-    // ===============================================================
-
+    // ---- Team (admin-managed staff list) ----
     match /team/{email} {
       allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
+    // ---- Users ----
+    // The user app updates its own doc constantly (balance mirror, pin,
+    // accounts, seen updates). Owners may update their own doc but may
+    // NOT change their role.
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin() || isManager();
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
-      allow update: if isAdmin() || isManager() || (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['username', 'photoURL']));
-    }
-
-    match /withdrawals/{requestId} {
-      allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && isValidWithdrawal(request.resource.data);
-      allow update: if isAdmin() || isPaymentManager();
+      allow create: if isAuthenticated() && isOwner(userId) && request.resource.data.role == 'user';
+      allow update: if isAdmin() || isManager() ||
+        (isOwner(userId) && request.resource.data.role == resource.data.role);
       allow delete: if isAdmin();
     }
 
-    match /userTasks/{submissionId} {
-      allow read: if isAdmin() || isEditor() || isManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin() || isEditor() || isManager();
-    }
-
-    match /referrals/{referralId} {
-      allow read: if isAdmin() || isManager() || (isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid));
-      allow create: if isAuthenticated() && request.resource.data.referredId == request.auth.uid;
-      allow update: if isAdmin() || isManager();
-    }
-
-    match /tasks/{taskId} {
+    // ---- App settings (single doc the whole app reads) ----
+    match /app_settings/{docId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin() || isEditor();
-      allow update: if isAdmin() || isEditor();
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    match /lotteries/{lotteryId} {
-      allow read: if isAuthenticated();
-      allow create: if isAdmin() || isEditor();
-      allow update: if isAdmin() || isEditor() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentMembers']));
-    }
-
-    match /revenue_transactions/{id} {
-      allow read: if isAdmin() || isPaymentManager();
-      allow create: if isAdmin() || isPaymentManager();
-    }
-
-    match /withdraw_fees/{id} {
-      allow read: if isAdmin() || isPaymentManager();
-      allow create: if isAdmin() || isPaymentManager();
-    }
-
+    // ---- Deposits ----
     match /deposits/{id} {
       allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update: if isAdmin() || isPaymentManager();
+      allow delete: if isAdmin();
     }
 
-    match /promotions/{id} {
+    // ---- Withdrawals ----
+    // The app writes status 'Pending' (capital P) with accountName /
+    // accountNumber / date / timestamp fields — the rules match reality.
+    match /withdrawals/{id} {
+      allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status in ['Pending', 'pending'];
+      allow update: if isAdmin() || isPaymentManager();
+      allow delete: if isAdmin();
+    }
+
+    // ---- Earning history (users read their own) ----
+    match /earning_history/{id} {
+      allow read: if isAdmin() || isManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin() || isManager();
+    }
+
+    // ---- Notifications (personal + broadcasts with userId 'all') ----
+    match /notifications/{id} {
+      allow read: if isAdmin() || (isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || resource.data.userId == 'all'));
+      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.userId == request.auth.uid);
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // ---- Admin mailbox archive ----
+    match /mails/{id} {
+      allow read, write: if isStaff();
+    }
+
+    // ---- Content the admin manages and users read ----
+    match /video_ads/{id} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin() || isEditor();
-      allow update: if isAdmin() || isEditor();
-      allow delete: if isAdmin();
+      allow write: if isAdmin() || isEditor();
     }
-
-    match /promotion_submissions/{id} {
-      allow read: if isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin() || isEditor();
-    }
-
-    match /promotion_orders/{id} {
-      allow read: if isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin() || isEditor();
-      allow delete: if isAdmin();
-    }
-
     match /social_tasks/{id} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin() || isEditor();
-      allow update: if isAdmin() || isEditor();
+      allow write: if isAdmin() || isEditor();
+    }
+    match /tasks/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isEditor();
+    }
+    match /boosters/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isEditor();
+    }
+    match /lotteries/{id} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin() || isEditor();
+      allow update: if isAdmin() || isEditor() ||
+        (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentMembers']));
+    }
+    match /lottery_entries/{id} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    match /lottery_winners/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ---- Submissions & requests ----
+    match /social_task_submissions/{id} {
+      allow read: if isStaff() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || isEditor() || isManager();
+      allow delete: if isAdmin();
+    }
+    match /userTasks/{id} {
+      allow read: if isStaff() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || isEditor() || isManager();
+      allow delete: if isAdmin();
+    }
+    match /partnerRequests/{id} {
+      allow read: if isStaff() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isStaff();
+    }
+    match /promotion_orders/{id} {
+      allow read: if isStaff() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isStaff();
+    }
+    match /boosterPurchases/{id} {
+      allow read: if isStaff() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isStaff();
+    }
+    match /referrals/{id} {
+      allow read: if isAdmin() || isManager() ||
+        (isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid));
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || isManager();
       allow delete: if isAdmin();
     }
 
-    match /social_task_submissions/{id} {
-      allow read: if isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin() || isEditor();
+    // ---- Lookup / lock helpers used by the app ----
+    match /usernames/{name} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    match /user_ad_locks/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
     }
 
-    match /earning_history/{id} {
-      allow read: if isAdmin() || isManager();
-      allow write: if isAdmin() || isManager();
+    // ---- Money / revenue records (staff only) ----
+    match /revenueTransactions/{id} {
+      allow read, write: if isAdmin() || isPaymentManager();
     }
+    match /revenue_transactions/{id} {
+      allow read, write: if isAdmin() || isPaymentManager();
+    }
+    match /withdraw_fees/{id} {
+      allow read, write: if isAdmin() || isPaymentManager();
+    }
+
+    // Everything else: deny.
   }
 }

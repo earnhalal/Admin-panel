@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { rtdb } from '../services/firebase';
+import { rtdb, db } from '../services/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, onValue, set } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 
@@ -29,6 +30,108 @@ const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void;
         <span className={`${enabled ? 'translate-x-6' : 'translate-x-1'} inline-block w-4 h-4 transform bg-white rounded-full transition-transform`} />
     </button>
 );
+
+
+// ================= User App Control (Firestore app_settings/global) =================
+// These are the LIVE settings the TaskMint user app actually reads.
+interface AppControl {
+  paymentName: string;
+  paymentNumber: string;
+  whatsappNumber: string;
+  activationFee: number;
+  partnerFee: number;
+  referralBonusBasic: number;
+  referralBonusPartner: number;
+  indirectReferralBonus: number;
+  minWithdrawal: number;
+  withdrawalFeeRate: number;
+  manualWithdrawUnlock: boolean;
+}
+
+const APP_DEFAULTS: AppControl = {
+  paymentName: 'M-WASEEM',
+  paymentNumber: '03338739929',
+  whatsappNumber: '923338739929',
+  activationFee: 150,
+  partnerFee: 1000,
+  referralBonusBasic: 100,
+  referralBonusPartner: 150,
+  indirectReferralBonus: 10,
+  minWithdrawal: 500,
+  withdrawalFeeRate: 5,
+  manualWithdrawUnlock: false,
+};
+
+const AppControlSettings: React.FC = () => {
+  const [cfg, setCfg] = useState<AppControl>(APP_DEFAULTS);
+  const [savingCfg, setSavingCfg] = useState(false);
+  const { addToast } = useToast();
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'app_settings', 'global'), (snap) => {
+      if (snap.exists()) {
+        setCfg(prev => ({ ...prev, ...(snap.data() as Partial<AppControl>) }));
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const num = (key: keyof AppControl) => ({
+    value: cfg[key] as number,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setCfg(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 })),
+  });
+  const txt = (key: keyof AppControl) => ({
+    value: cfg[key] as string,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setCfg(prev => ({ ...prev, [key]: e.target.value })),
+  });
+
+  const save = async () => {
+    setSavingCfg(true);
+    try {
+      await setDoc(doc(db, 'app_settings', 'global'), { ...cfg }, { merge: true });
+      addToast('App settings saved — the user app will use them immediately.', 'success');
+    } catch (e) {
+      addToast('Failed to save app settings.', 'error');
+    } finally {
+      setSavingCfg(false);
+    }
+  };
+
+  const inputCls = "w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500";
+  const labelCls = "block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5";
+
+  return (
+    <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6 border-2 border-emerald-500/40">
+      <div className="flex items-start justify-between border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">App Control — User App Settings</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">These settings are read live by the TaskMint user app (payments, fees, bonuses).</p>
+        </div>
+        <button onClick={save} disabled={savingCfg} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition disabled:opacity-50 shrink-0">
+          {savingCfg ? 'Saving...' : 'Save App Settings'}
+        </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div><label className={labelCls}>EasyPaisa Account Title</label><input className={inputCls} {...txt('paymentName')} /></div>
+        <div><label className={labelCls}>EasyPaisa Account Number</label><input className={inputCls} {...txt('paymentNumber')} /></div>
+        <div><label className={labelCls}>WhatsApp Number (country code, no +)</label><input className={inputCls} {...txt('whatsappNumber')} /></div>
+        <div><label className={labelCls}>Joining / Activation Fee (Rs.)</label><input type="number" className={inputCls} {...num('activationFee')} /></div>
+        <div><label className={labelCls}>Partner Fee (Rs.)</label><input type="number" className={inputCls} {...num('partnerFee')} /></div>
+        <div><label className={labelCls}>Minimum Withdrawal (Rs.)</label><input type="number" className={inputCls} {...num('minWithdrawal')} /></div>
+        <div><label className={labelCls}>Withdrawal Fee (%)</label><input type="number" className={inputCls} {...num('withdrawalFeeRate')} /></div>
+        <div><label className={labelCls}>Referral Bonus — Basic (Rs.)</label><input type="number" className={inputCls} {...num('referralBonusBasic')} /></div>
+        <div><label className={labelCls}>Referral Bonus — Partner (Rs.)</label><input type="number" className={inputCls} {...num('referralBonusPartner')} /></div>
+        <div><label className={labelCls}>Indirect Referral Bonus (Rs.)</label><input type="number" className={inputCls} {...num('indirectReferralBonus')} /></div>
+        <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2">
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Withdrawals Always Open (ignore payout windows)</span>
+          <Toggle enabled={cfg.manualWithdrawUnlock} onChange={(v) => setCfg(prev => ({ ...prev, manualWithdrawUnlock: v }))} />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SettingsPage: React.FC = () => {
     const [settings, setSettings] = useState<AppSettings>({
@@ -110,8 +213,10 @@ const SettingsPage: React.FC = () => {
             </div>
             
             <div className="space-y-8">
+                <AppControlSettings />
                 <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">Revenue Configuration</h2>
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-slate-800 pb-4 mb-2">Revenue Configuration (Automation)</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Legacy automation settings stored in the Realtime Database. These drive AI autopilot features only — use App Control above for anything the user app shows.</p>
                      {loading ? <p>Loading settings...</p> : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                            <NumberInput label="Task Commission Rate" value={settings.taskCommissionRate} onChange={val => handleSettingChange('taskCommissionRate', val)} isPercentage />

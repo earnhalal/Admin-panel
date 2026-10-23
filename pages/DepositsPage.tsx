@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, rtdb } from '../services/firebase';
-import { collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, orderBy, Timestamp } from 'firebase/firestore';
-import { ref, set as setRtdb, get as getRtdb } from 'firebase/database';
+import { collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, orderBy, Timestamp, increment } from 'firebase/firestore';
+import { ref, set as setRtdb, get as getRtdb, remove as removeRtdb } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Pagination from '../components/Pagination';
@@ -193,6 +193,13 @@ const DepositsPage: React.FC = () => {
         const currentBalance = balanceSnap.val() || 0;
         await setRtdb(balanceRef, currentBalance + amount);
 
+        // 1b. Mirror the same credit into Firestore so both ledgers stay in sync
+        try {
+            await updateDoc(doc(db, 'users', userId), { balance: increment(amount) });
+        } catch (e) {
+            await setDoc(doc(db, 'users', userId), { balance: increment(amount) }, { merge: true });
+        }
+
         // 2. If activation type, update status
         if (requestToApprove.type === 'activation') {
             await setRtdb(ref(rtdb, 'users/' + userId + '/status'), 'active');
@@ -237,6 +244,13 @@ const DepositsPage: React.FC = () => {
             status: 'Rejected',
             rejectedAt: Timestamp.now()
         });
+
+        // If this was an activation request, also clear it from the RTDB joining queue
+        const rejectedReq = deposits.find(r => r.id === id);
+        if (rejectedReq && (rejectedReq as any).type === 'activation') {
+            try { await removeRtdb(ref(rtdb, `pending_requests/${rejectedReq.userId}`)); } catch (e) {}
+            try { await setRtdb(ref(rtdb, 'users/' + rejectedReq.userId + '/status'), 'rejected'); } catch (e) {}
+        }
         
         addToast('Deposit rejected.', 'success');
     } catch (error) {
