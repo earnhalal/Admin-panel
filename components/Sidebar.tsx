@@ -144,6 +144,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavLink to="/team" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Users2 size={18} className="mr-3" /> Team Management
           </NavLink>
+          <NavLink to="/ai-agent" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
+            <Bot size={18} className="mr-3" /> AI Agent
+          </NavLink>
           <NavLink to="/maintenance" onClick={handleLinkClick} className={({ isActive }) => `${commonLinkClass} ${isActive ? activeLinkClass : ''}`}>
             <Settings size={18} className="mr-3" /> System Maintenance
           </NavLink>
