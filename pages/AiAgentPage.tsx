@@ -226,6 +226,24 @@ const AiAgentPage: React.FC = () => {
             value={settings.withdrawalsGuard}
             onChange={v => saveSettings({ ...settings, withdrawalsGuard: v })}
           />
+          <Toggle
+            label="Task submissions (24/7 agent)"
+            desc="Handled by the 24/7 server agent: approves submissions with proof attached and no duplicate, pays the worker, and rejects missing-proof or duplicate submissions."
+            value={settings.submissions}
+            onChange={v => saveSettings({ ...settings, submissions: v })}
+          />
+          <Toggle
+            label="Booster purchases (24/7 agent)"
+            desc="Handled by the 24/7 server agent: applies booster benefits and records the revenue automatically."
+            value={settings.booster}
+            onChange={v => saveSettings({ ...settings, booster: v })}
+          />
+          <Toggle
+            label="Auto-approve withdrawals (24/7 agent)"
+            desc="Off by default. If enabled, the 24/7 agent marks verified withdrawals as approved and queued for payout — you still send the money yourself; the agent never invents a transaction reference."
+            value={settings.withdrawalsAutoApprove}
+            onChange={v => saveSettings({ ...settings, withdrawalsAutoApprove: v })}
+          />
           {lastRun && <p className="text-xs text-gray-400 mt-3">Last run: {lastRun}</p>}
         </div>
 

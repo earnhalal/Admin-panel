@@ -29,6 +29,9 @@ export interface AgentSettings {
   promotions: boolean;
   partner: boolean;
   withdrawalsGuard: boolean;
+  submissions: boolean;
+  booster: boolean;
+  withdrawalsAutoApprove: boolean;
   maxAutoDeposit: number;
 }
 
@@ -39,6 +42,9 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   promotions: true,
   partner: true,
   withdrawalsGuard: true,
+  submissions: true,
+  booster: true,
+  withdrawalsAutoApprove: false,
   maxAutoDeposit: 5000
 };
 
