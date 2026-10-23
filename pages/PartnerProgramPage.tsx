@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
+import { ref as rtdbRef, update as rtdbUpdate } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Check, X, User as UserIcon, Handshake, Mail, Link as LinkIcon, Calendar, Search, ArrowLeft } from 'lucide-react';
@@ -55,12 +56,22 @@ const PartnerProgramPage: React.FC = () => {
             updatedAt: new Date()
         });
         
-        // Optionally update the user's profile to make them a partner
+        // Unlock partner in the user app: the app gates partner features on
+        // role === 'partner' and partnerStatus — isPartner alone did nothing.
         if (request.userId) {
             await updateDoc(doc(db, 'users', request.userId), {
                 isPartner: true,
-                partnerSince: new Date()
+                partnerSince: new Date(),
+                role: 'partner',
+                partnerStatus: 'active',
+                partnerTier: 'silver'
             });
+            try {
+                await rtdbUpdate(rtdbRef(rtdb, `users/${request.userId}`), {
+                    role: 'partner',
+                    partnerStatus: 'active'
+                });
+            } catch (e) {}
         }
         
         addToast("Partner request approved successfully!", "success");
@@ -79,6 +90,15 @@ const PartnerProgramPage: React.FC = () => {
             status: 'rejected',
             updatedAt: new Date()
         });
+        // Reset the user's status so they are not stuck on 'pending' forever
+        if (request.userId) {
+            try {
+                await updateDoc(doc(db, 'users', request.userId), { partnerStatus: 'none' });
+            } catch (e) {}
+            try {
+                await rtdbUpdate(rtdbRef(rtdb, `users/${request.userId}`), { partnerStatus: 'none' });
+            } catch (e) {}
+        }
         addToast("Partner request rejected.", "success");
     } catch (error) {
         console.error(error);
