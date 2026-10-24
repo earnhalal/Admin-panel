@@ -15,6 +15,7 @@ import UserProfilePage from './pages/UserProfilePage';
 import RevenuePage from './pages/RevenuePage';
 import BoosterStorePage from './pages/BoosterStorePage';
 import VideoAdsPage from './pages/VideoAdsPage';
+import AdNetworksPage from './pages/AdNetworksPage';
 import WithdrawalsPage from './pages/WithdrawalsPage';
 import MailboxPage from './pages/MailboxPage';
 import SocialTasksPage from './pages/SocialTasksPage';
@@ -47,6 +48,7 @@ const App: React.FC = () => {
               <Route path="social-tasks" element={<SocialTasksPage />} />
               <Route path="social-task-submissions" element={<SocialTaskSubmissionsPage />} />
               <Route path="video-ads" element={<VideoAdsPage />} />
+              <Route path="ad-networks" element={<AdNetworksPage />} />
               <Route path="withdrawals" element={<WithdrawalsPage />} />
               <Route path="deposits" element={<DepositsPage />} />
               <Route path="approvals" element={<JoiningApprovalsPage />} />
