@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { rtdb } from '../services/firebase';
+import { rtdb, db } from '../services/firebase';
+import { collection, getDocs } from 'firebase/firestore';
 import { ref, onValue, get } from 'firebase/database';
 import { 
   Users, 
@@ -53,6 +54,7 @@ const ReferralReportPage: React.FC = () => {
     const [invites, setInvites] = useState<any>({});
     const [users, setUsers] = useState<any>({});
     const [loading, setLoading] = useState(true);
+    const [fsUsers, setFsUsers] = useState<{[uid: string]: any}>({});
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending' | 'rejected'>('all');
     const [viewMode, setViewMode] = useState<'summary' | 'detailed'>('detailed');
@@ -70,6 +72,15 @@ const ReferralReportPage: React.FC = () => {
                 
                 setInvites(invitesSnap.val() || {});
                 setUsers(usersSnap.val() || {});
+
+                // Identity (username/email) lives in Firestore — RTDB users
+                // only carry balance/status, so names must come from here.
+                try {
+                    const fsSnap = await getDocs(collection(db, 'users'));
+                    const map: {[uid: string]: any} = {};
+                    fsSnap.forEach(d => { map[d.id] = d.data(); });
+                    setFsUsers(map);
+                } catch (e) { /* names fall back to RTDB data */ }
             } catch (error) {
                 console.error("Error fetching referral data:", error);
             } finally {
@@ -85,10 +96,10 @@ const ReferralReportPage: React.FC = () => {
 
         Object.entries(invites).forEach(([referrerUid, data]: [string, any]) => {
             const history = data.history || {};
-            const referrerData = users[referrerUid] || {};
+            const referrerData = fsUsers[referrerUid] || users[referrerUid] || {};
             
             Object.entries(history).forEach(([invitedUid, inviteData]: [string, any]) => {
-                const invitedUserData = users[invitedUid] || {};
+                const invitedUserData = fsUsers[invitedUid] || users[invitedUid] || {};
                 
                 // Prioritize finding a username field. If not found, check if the ID itself looks like a username
                 // Many times in RTDB, people use the username AS the key.
@@ -109,7 +120,7 @@ const ReferralReportPage: React.FC = () => {
         });
 
         return list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    }, [invites, users]);
+    }, [invites, users, fsUsers]);
 
     const referrerStats = useMemo(() => {
         const stats: ReferrerStats[] = [];
@@ -118,7 +129,7 @@ const ReferralReportPage: React.FC = () => {
             const history = data.history || {};
             const historyItems = Object.entries(history);
             
-            const userData = users[referrerUid] || {};
+            const userData = fsUsers[referrerUid] || users[referrerUid] || {};
             
             // Fix: If UID doesn't exist in users node, check if the UID itself is a username
             const displayName = userData.username || userData.name || userData.code || (referrerUid.length < 20 ? referrerUid : 'Unknown');
@@ -138,7 +149,7 @@ const ReferralReportPage: React.FC = () => {
         });
 
         return stats.sort((a, b) => b.totalInvites - a.totalInvites);
-    }, [invites, users]);
+    }, [invites, users, fsUsers]);
 
     const filteredRecords = useMemo(() => {
         if (viewMode === 'summary') {
