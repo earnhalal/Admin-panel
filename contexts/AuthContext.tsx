@@ -3,7 +3,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, db } from '../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-const OWNER_EMAILS = ['r83842009@gmail.com', 'muhammadwaseem259@gmail.com'];
+const OWNER_EMAILS = ['r83842009@gmail.com', 'muhammadwaseem2559@gmail.com'];
 
 interface AuthContextType {
   currentUser: User | null;
@@ -35,7 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       // Admin access = owner email, Firestore users role 'admin', or a team membership
       try {
-        if (user.email && OWNER_EMAILS.includes(user.email)) {
+        if (user.email && OWNER_EMAILS.includes(user.email.toLowerCase())) {
           setIsAdmin(true);
           return;
         }
