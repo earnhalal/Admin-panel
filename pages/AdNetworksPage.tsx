@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
+import { ref as rtdbRef, update as rtdbUpdate } from 'firebase/database';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
@@ -23,6 +24,12 @@ interface AdsNetworksConfig {
   startioTestMode: boolean;
   startioRewardAmount: number; // Rs. per completed rewarded view
   startioDailyLimit: number; // rewarded views per user per day; 0 = unlimited
+  // Plan-tier reward ladder (both networks). 0 = not set: the app falls
+  // back down the ladder and finally to the per-network reward above.
+  rewardBasic: number;
+  rewardBronze: number;
+  rewardSilver: number;
+  rewardGold: number;
 }
 
 const CONFIG_DEFAULTS: AdsNetworksConfig = {
@@ -38,6 +45,10 @@ const CONFIG_DEFAULTS: AdsNetworksConfig = {
   startioTestMode: true,
   startioRewardAmount: 1,
   startioDailyLimit: 10,
+  rewardBasic: 0.3,
+  rewardBronze: 0.4,
+  rewardSilver: 0.5,
+  rewardGold: 0.6,
 };
 
 const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }> = ({ enabled, onChange, disabled }) => (
@@ -72,7 +83,7 @@ const AdNetworksPage: React.FC = () => {
     return () => unsub();
   }, [addToast]);
 
-  const num = (key: 'unityRewardAmount' | 'unityDailyLimit' | 'startioRewardAmount' | 'startioDailyLimit') => ({
+  const num = (key: 'unityRewardAmount' | 'unityDailyLimit' | 'startioRewardAmount' | 'startioDailyLimit' | 'rewardBasic' | 'rewardBronze' | 'rewardSilver' | 'rewardGold') => ({
     value: cfg[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
       setCfg(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 })),
@@ -99,7 +110,37 @@ const AdNetworksPage: React.FC = () => {
         startioTestMode: cfg.startioTestMode,
         startioRewardAmount: cfg.startioRewardAmount,
         startioDailyLimit: cfg.startioDailyLimit,
+        rewardBasic: cfg.rewardBasic,
+        rewardBronze: cfg.rewardBronze,
+        rewardSilver: cfg.rewardSilver,
+        rewardGold: cfg.rewardGold,
       }, { merge: true });
+      // Mirror to RTDB: the app reads the RTDB copy first (it is the
+      // complete live mirror), so panel edits apply immediately.
+      try {
+        await rtdbUpdate(rtdbRef(rtdb, 'app_settings/ads'), {
+          unityEnabled: cfg.unityEnabled,
+          unityGameId: cfg.unityGameId.trim(),
+          unityRewardedPlacementId: cfg.unityRewardedPlacementId.trim(),
+          unityInterstitialPlacementId: cfg.unityInterstitialPlacementId.trim(),
+          unityTestMode: cfg.unityTestMode,
+          unityRewardAmount: cfg.unityRewardAmount,
+          unityDailyLimit: cfg.unityDailyLimit,
+          startioEnabled: cfg.startioEnabled,
+          startioAppId: cfg.startioAppId.trim(),
+          startioTestMode: cfg.startioTestMode,
+          startioRewardAmount: cfg.startioRewardAmount,
+          startioDailyLimit: cfg.startioDailyLimit,
+          rewardBasic: cfg.rewardBasic,
+          rewardBronze: cfg.rewardBronze,
+          rewardSilver: cfg.rewardSilver,
+          rewardGold: cfg.rewardGold,
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'Admin panel',
+        });
+      } catch (mirrorError) {
+        console.warn('RTDB mirror of ad settings failed:', mirrorError);
+      }
       addToast('Ad network settings saved — the app will use them automatically.', 'success');
     } catch (e) {
       addToast('Failed to save ad network settings.', 'error');
@@ -238,6 +279,37 @@ const AdNetworksPage: React.FC = () => {
             <label className={labelCls}>Daily Limit per User</label>
             <input type="number" min="0" step="1" className={inputCls} {...num('startioDailyLimit')} />
             <p className={helpCls}>Maximum rewarded ads one user can earn from per day. 0 = unlimited.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Reward by plan */}
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-lg p-6 mt-6">
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <div>
+            <h3 className="text-gray-800 dark:text-white font-bold text-lg">Reward by Plan</h3>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              Rs. paid per completed rewarded ad, by the member's package — the same ladder applies to Unity and Start.io.
+              Members who paid for a bigger package earn more per ad. Set a rate to 0 to fall back to the rate below it.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          <div>
+            <label className={labelCls}>Basic (no package)</label>
+            <input type="number" min="0" step="0.05" className={inputCls} {...num('rewardBasic')} />
+          </div>
+          <div>
+            <label className={labelCls}>Bronze package</label>
+            <input type="number" min="0" step="0.05" className={inputCls} {...num('rewardBronze')} />
+          </div>
+          <div>
+            <label className={labelCls}>Silver package</label>
+            <input type="number" min="0" step="0.05" className={inputCls} {...num('rewardSilver')} />
+          </div>
+          <div>
+            <label className={labelCls}>Gold package</label>
+            <input type="number" min="0" step="0.05" className={inputCls} {...num('rewardGold')} />
           </div>
         </div>
       </div>
