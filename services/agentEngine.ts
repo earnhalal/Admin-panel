@@ -121,26 +121,34 @@ async function rejectDeposit(d: any, reason: string) {
 }
 
 async function processDeposits(s: AgentSettings, out: AgentRunResult) {
-  // Quota guard: skip the full read when nothing is pending (the full
-  // set is only needed for transaction-ID duplicate counts).
+  // Quota-proof: only pending deposits are loaded. Duplicate detection
+  // asks Firestore for just the documents carrying the same transaction
+  // ID — the whole deposits collection is never downloaded.
   const pendingSnap = await getDocs(query(collection(db, 'deposits'), where('status', 'in', ['Pending', 'pending'])));
   if (pendingSnap.empty) return;
-  const snap = await getDocs(collection(db, 'deposits'));
-  const all = snap.docs.map(x => ({ id: x.id, ...(x.data() as any) }));
   const txOf = (d: any) => norm(d.transactionId || d.txnId || d.transactionID);
-  const txCounts = new Map<string, number>();
-  const txApproved = new Set<string>();
-  for (const d of all) {
-    const tx = txOf(d);
-    if (!tx) continue;
-    txCounts.set(tx, (txCounts.get(tx) || 0) + 1);
-    if (norm(d.status) === 'approved') txApproved.add(tx);
+  const txInfoCache = new Map<string, { count: number; approved: boolean }>();
+  async function txInfo(tx: string) {
+    if (txInfoCache.has(tx)) return txInfoCache.get(tx)!;
+    const byId = new Map<string, any>();
+    for (const field of ['transactionId', 'txnId']) {
+      try {
+        const q = await getDocs(query(collection(db, 'deposits'), where(field, '==', tx)));
+        q.docs.forEach(docSnap => byId.set(docSnap.id, docSnap.data()));
+      } catch (e) {}
+    }
+    const docs = [...byId.values()];
+    const info = { count: docs.length, approved: docs.some((x: any) => norm(x.status) === 'approved') };
+    txInfoCache.set(tx, info);
+    return info;
   }
   // Screenshot-upload deposits are decided by screenshot verification
   // (owner / agent proof pass), never by transaction-ID rules — their
   // transactionId is the shared placeholder 'In-app upload', which
   // would false-positive as a duplicate here.
-  for (const d of all.filter(x => isPending(x.status) && (x as any).proofMethod !== 'upload')) {
+  for (const x of pendingSnap.docs) {
+    const d: any = { id: x.id, ...(x.data() as any) };
+    if (!isPending(d.status) || d.proofMethod === 'upload') continue;
     const tx = txOf(d);
     if (!d.userId || !(Number(d.amount) > 0)) {
       await rejectDeposit(d, 'Invalid deposit amount or missing user');
@@ -148,14 +156,17 @@ async function processDeposits(s: AgentSettings, out: AgentRunResult) {
     } else if (!tx) {
       await rejectDeposit(d, 'Missing transaction ID');
       out.actions.push({ queue: 'deposit', targetId: d.id, userId: d.userId, action: 'rejected', reasons: ['Missing transaction ID'], amount: d.amount });
-    } else if (txApproved.has(tx) || (txCounts.get(tx) || 0) > 1) {
-      await rejectDeposit(d, 'Duplicate transaction ID');
-      out.actions.push({ queue: 'deposit', targetId: d.id, userId: d.userId, action: 'rejected', reasons: ['Duplicate transaction ID'], amount: d.amount });
-    } else if (Number(d.amount) > s.maxAutoDeposit) {
-      out.escalated.deposit++;
     } else {
-      await approveDeposit(d);
-      out.actions.push({ queue: 'deposit', targetId: d.id, userId: d.userId, action: 'approved', reasons: ['Unique transaction ID', `Within auto limit Rs. ${s.maxAutoDeposit}`], amount: d.amount });
+      const info = await txInfo(tx);
+      if (info.approved || info.count > 1) {
+        await rejectDeposit(d, 'Duplicate transaction ID');
+        out.actions.push({ queue: 'deposit', targetId: d.id, userId: d.userId, action: 'rejected', reasons: ['Duplicate transaction ID'], amount: d.amount });
+      } else if (Number(d.amount) > s.maxAutoDeposit) {
+        out.escalated.deposit++;
+      } else {
+        await approveDeposit(d);
+        out.actions.push({ queue: 'deposit', targetId: d.id, userId: d.userId, action: 'approved', reasons: ['Unique transaction ID', `Within auto limit Rs. ${s.maxAutoDeposit}`], amount: d.amount });
+      }
     }
   }
 }
@@ -331,22 +342,28 @@ async function rejectPartner(req: any, reason: string) {
 }
 
 async function processPartner(out: AgentRunResult) {
-  // Quota guard: skip the full read when nothing is pending.
+  // Quota-proof: only pending requests are loaded; the duplicate check
+  // asks for just the documents carrying the same transaction ID.
   const pendingSnap = await getDocs(query(collection(db, 'partnerRequests'), where('status', 'in', ['pending', 'Pending'])));
   if (pendingSnap.empty) return;
-  const snap = await getDocs(collection(db, 'partnerRequests'));
-  const all = snap.docs.map(x => ({ id: x.id, ...(x.data() as any) }));
-  const txCounts = new Map<string, number>();
-  for (const r of all) {
-    const tx = norm(r.txId);
-    if (tx) txCounts.set(tx, (txCounts.get(tx) || 0) + 1);
-  }
-  for (const r of all.filter(x => isPending(x.status))) {
+  for (const x of pendingSnap.docs) {
+    const r: any = { id: x.id, ...(x.data() as any) };
+    if (!isPending(r.status)) continue;
     const tx = norm(r.txId);
     if (!tx) {
       await rejectPartner(r, 'Missing transaction ID');
       out.actions.push({ queue: 'partner', targetId: r.id, userId: r.userId, action: 'rejected', reasons: ['Missing transaction ID'] });
-    } else if ((txCounts.get(tx) || 0) > 1) {
+      continue;
+    }
+    const byId = new Map<string, any>();
+    for (const v of new Set([String(r.txId), tx])) {
+      try {
+        const q = await getDocs(query(collection(db, 'partnerRequests'), where('txId', '==', v)));
+        q.docs.forEach(docSnap => byId.set(docSnap.id, docSnap.data()));
+      } catch (e) {}
+    }
+    const dupCount = [...byId.values()].filter((o: any) => norm(o.txId) === tx).length;
+    if (dupCount > 1) {
       await rejectPartner(r, 'Transaction ID already used');
       out.actions.push({ queue: 'partner', targetId: r.id, userId: r.userId, action: 'rejected', reasons: ['Duplicate transaction ID'] });
     } else {
