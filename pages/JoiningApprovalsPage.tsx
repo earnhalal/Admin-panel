@@ -241,7 +241,42 @@ const JoiningApprovalsPage: React.FC = () => {
         let referrerUid = rawReferrer ? await resolveReferrerUid(rawReferrer) : null;
         
         if (referrerUid) {
-            const rewardAmount = 100;
+            // Direct referral commission follows the referrer's package plan:
+            // basic referrers earn referralBonusBasic, package (partner) plan
+            // holders earn referralBonusPartner. Rates come from
+            // app_settings/global and fall back to 100/125 if unreadable.
+            let basicRate = 100;
+            let partnerRate = 125;
+            try {
+                const settingsSnap = await getDoc(doc(db, 'app_settings', 'global'));
+                if (settingsSnap.exists()) {
+                    const settings = settingsSnap.data() || {};
+                    if (Number(settings.referralBonusBasic) > 0) basicRate = Number(settings.referralBonusBasic);
+                    if (Number(settings.referralBonusPartner) > 0) partnerRate = Number(settings.referralBonusPartner);
+                }
+            } catch (e) {
+                // Settings unreadable — keep the default rates above.
+            }
+
+            let referrerIsPartner = false;
+            try {
+                const referrerFsSnap = await getDoc(doc(db, 'users', referrerUid));
+                if (referrerFsSnap.exists()) {
+                    const referrerData = referrerFsSnap.data() || {};
+                    referrerIsPartner = referrerData.role === 'partner' || referrerData.partnerStatus === 'active';
+                }
+            } catch (e) {}
+            if (!referrerIsPartner) {
+                try {
+                    const referrerRtdbSnap = await get(ref(rtdb, `users/${referrerUid}`));
+                    if (referrerRtdbSnap.exists()) {
+                        const referrerRtdbData = referrerRtdbSnap.val() || {};
+                        referrerIsPartner = referrerRtdbData.role === 'partner' || referrerRtdbData.partnerStatus === 'active';
+                    }
+                } catch (e) {}
+            }
+
+            const rewardAmount = referrerIsPartner ? partnerRate : basicRate;
             const invitePath = `invites/${referrerUid}/history/${userId}`;
             
             // Double-credit protection: Check if already paid

@@ -397,7 +397,7 @@ const ReferralReportPage: React.FC = () => {
                         </li>
                         <li className="flex items-start gap-3 text-sm text-indigo-200/70">
                             <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0"></div>
-                            <b>Earnings:</b> Sum of the commission recorded on each 'Paid' status referral in the inviter's history (Rs 100 or Rs 125 per referral, depending on the rate in effect when it was earned).
+                            <b>Earnings:</b> Sum of the commission recorded on each 'Paid' status referral in the inviter's history. Each paid referral pays the commission recorded on the invite — Rs 100, or Rs 125 when the referrer holds a package (partner) plan.
                         </li>
                     </ul>
                 </div>
