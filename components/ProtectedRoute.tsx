@@ -10,7 +10,7 @@ const ProtectedRoute: React.FC = () => {
   if (loading || (currentUser && !adminChecked)) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-emerald-500"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
@@ -30,7 +30,7 @@ const ProtectedRoute: React.FC = () => {
           </p>
           <button
             onClick={() => signOut(auth)}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 rounded-xl transition"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl transition"
           >
             Sign out
           </button>
