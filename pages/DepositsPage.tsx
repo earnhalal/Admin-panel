@@ -195,12 +195,10 @@ const DepositsPage: React.FC = () => {
         const currentBalance = balanceSnap.val() || 0;
         await setRtdb(balanceRef, currentBalance + amount);
 
-        // 1b. Mirror the same credit into Firestore so both ledgers stay in sync
-        try {
-            await updateDoc(doc(db, 'users', userId), { balance: increment(amount) });
-        } catch (e) {
-            await setDoc(doc(db, 'users', userId), { balance: increment(amount) }, { merge: true });
-        }
+        // 1b. Mirror the RESULTING RTDB balance into Firestore (set, not
+        // increment): RTDB is the source of truth, so writing the final
+        // value also heals any drift the Firestore copy had accumulated.
+        await setDoc(doc(db, 'users', userId), { balance: currentBalance + amount }, { merge: true });
 
         // 2. If activation type, update status
         if (requestToApprove.type === 'activation') {
