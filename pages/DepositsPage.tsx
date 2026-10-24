@@ -53,6 +53,21 @@ const DepositsPage: React.FC = () => {
   
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [proofModal, setProofModal] = useState<{ img: string; req: DepositRequest } | null>(null);
+
+  const viewProof = async (req: DepositRequest) => {
+    try {
+      const snap = await getDoc(doc(db, 'deposits', req.id, 'proof', 'image'));
+      if (snap.exists()) {
+        setProofModal({ img: (snap.data() as any).data || '', req });
+      } else {
+        addToast('No screenshot found for this deposit.', 'error');
+      }
+    } catch (e) {
+      addToast('Failed to load the screenshot.', 'error');
+    }
+  };
 
   const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
   const [approvalPayload, setApprovalPayload] = useState<DepositRequest | null>(null);
@@ -189,7 +204,10 @@ const DepositsPage: React.FC = () => {
     
     setActionLoading(prev => ({ ...prev, [id]: true }));
     try {
-        // 1. Update user balance in RTDB
+        // 1. Credit the wallet — regular deposits only. An activation fee
+        // is platform revenue, never wallet balance, so approving an
+        // activation request must not credit it back to the user.
+        if (requestToApprove.type !== 'activation') {
         const balanceRef = ref(rtdb, `users/${userId}/balance`);
         const balanceSnap = await getRtdb(balanceRef);
         const currentBalance = balanceSnap.val() || 0;
@@ -199,6 +217,7 @@ const DepositsPage: React.FC = () => {
         // increment): RTDB is the source of truth, so writing the final
         // value also heals any drift the Firestore copy had accumulated.
         await setDoc(doc(db, 'users', userId), { balance: currentBalance + amount }, { merge: true });
+        }
 
         // 2. If activation type, update status
         if (requestToApprove.type === 'activation') {
@@ -242,7 +261,8 @@ const DepositsPage: React.FC = () => {
         const depositRef = doc(db, 'deposits', id);
         await updateDoc(depositRef, {
             status: 'Rejected',
-            rejectedAt: Timestamp.now()
+            rejectedAt: Timestamp.now(),
+            rejectReason: rejectReason.trim() || 'Payment proof was not clear or the details did not match.'
         });
 
         // If this was an activation request, also clear it from the RTDB joining queue
@@ -259,6 +279,7 @@ const DepositsPage: React.FC = () => {
     } finally {
         setActionLoading(prev => ({ ...prev, [id]: false }));
         setIsRejectConfirmOpen(false);
+        setRejectReason('');
     }
   };
 
@@ -399,6 +420,11 @@ const DepositsPage: React.FC = () => {
                                         {req.transactionId || 'No ID provided'}
                                     </div>
                                 </div>
+                                {(req as any).proofMethod === 'upload' && (
+                                    <button onClick={() => viewProof(req)} className="mt-3 w-full py-2 rounded-lg bg-emerald-600/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-600/20 transition">
+                                        View Payment Screenshot
+                                    </button>
+                                )}
                                 {req.type && (
                                     <div className="mt-2 text-center">
                                         <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${req.type === 'activation' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30'}`}>
@@ -443,7 +469,47 @@ const DepositsPage: React.FC = () => {
         request={approvalPayload}
         isLoading={approvalPayload ? actionLoading[approvalPayload.id] : false}
       />
-      <ConfirmationModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={() => handleReject()} title="Reject Deposit" message="Are you sure you want to reject this deposit?" />
+      {isRejectConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setIsRejectConfirmOpen(false)}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-gray-900 dark:text-white">Reject Deposit</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">The user sees this reason in their verification chat, so pick or write it clearly.</p>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {['Duplicate screenshot — already used before', 'Screenshot is not clear', 'Amount does not match the request', 'Payment sent to the wrong account', 'Transaction details do not match'].map(r => (
+                <button key={r} onClick={() => setRejectReason(r)} className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition ${rejectReason === r ? 'bg-rose-600 text-white border-rose-600' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:border-rose-400'}`}>{r}</button>
+              ))}
+            </div>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} placeholder="Reason for rejection (shown to the user)…" className="mt-3 w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 px-3 py-2.5 text-sm text-gray-800 dark:text-gray-100 outline-none focus:border-rose-400" />
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setIsRejectConfirmOpen(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 text-sm font-bold text-gray-600 dark:text-gray-300">Cancel</button>
+              <button onClick={() => handleReject()} className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 transition">Reject Deposit</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {proofModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setProofModal(null)}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-black text-gray-900 dark:text-white">Payment Screenshot</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold">{proofModal.req.userName} • Rs. {proofModal.req.amount} • {proofModal.req.type || 'regular'}</p>
+              </div>
+              <button onClick={() => setProofModal(null)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500"><X size={18} /></button>
+            </div>
+            {(proofModal.req as any).screenshotHash && deposits.filter(d => (d as any).screenshotHash === (proofModal.req as any).screenshotHash).length > 1 && (
+              <div className="mt-3 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-900/50 rounded-xl px-3 py-2">
+                Duplicate screenshot — this exact image was submitted {deposits.filter(d => (d as any).screenshotHash === (proofModal.req as any).screenshotHash).length} times.
+              </div>
+            )}
+            {proofModal.img ? (
+              <img src={proofModal.img} alt="Payment screenshot" className="mt-3 w-full rounded-xl border border-gray-100 dark:border-slate-800" />
+            ) : (
+              <p className="mt-3 text-sm text-gray-500">Screenshot data is empty.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
