@@ -14,7 +14,14 @@ export interface VideoAd {
   description: string;
   rewardAmount: number;
   duration: number; // in seconds
-  network: 'HilltopAds' | 'AdMob' | 'Custom' | 'MyAdCash' | 'PropellerAds' | 'MyAdCashManual';
+  network: 'HilltopAds' | 'AdMob' | 'Custom' | 'MyAdCash' | 'PropellerAds' | 'MyAdCashManual' | 'Direct';
+  // Canonical fields the user app actually reads (written on every save):
+  videoUrl?: string; // Direct video link (YouTube or MP4/WebM)
+  scriptUrl?: string; // Top-level network script URL
+  reward?: number; // Mirror of rewardAmount
+  tier?: string; // basic / bronze / silver / gold
+  status?: string; // 'active' | 'inactive' (mirror of isActive)
+  views?: number; // Mirror of viewsCount
   config: {
     zoneId?: string;
     scriptUrl?: string;
@@ -50,9 +57,27 @@ const VideoAdsPage: React.FC = () => {
   const [selectedAdIds, setSelectedAdIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const q = query(collection(db, 'video_ads'), orderBy('createdAt', 'desc'));
+    // No orderBy('createdAt'): ads created by the user app itself have no
+    // createdAt field, and Firestore would silently exclude them all.
+    const q = query(collection(db, 'video_ads'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const adsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VideoAd));
+      const adsData = snapshot.docs.map(doc => {
+        const data: any = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          // The user app writes its own schema (reward / views / status at
+          // top level). Normalise it into the panel fields so app-created
+          // ads appear here with correct numbers.
+          rewardAmount: data.rewardAmount ?? data.reward ?? 0,
+          viewsCount: data.viewsCount ?? data.views ?? 0,
+          isActive: data.isActive ?? (data.status !== 'inactive'),
+          network: data.network ?? (data.videoUrl ? 'Direct' : 'HilltopAds'),
+          description: data.description ?? '',
+          duration: data.duration ?? 30,
+          maxViews: data.maxViews ?? data.limit ?? 0,
+        } as VideoAd;
+      });
       setAds(adsData);
       setLoading(false);
     }, (error) => {

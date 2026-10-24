@@ -10,7 +10,7 @@ interface VideoAdModalProps {
   isLoading?: boolean;
 }
 
-type AdNetwork = 'HilltopAds' | 'MyAdCash' | 'Custom' | 'PropellerAds' | 'AdMob' | 'MyAdCashManual';
+type AdNetwork = 'HilltopAds' | 'MyAdCash' | 'Custom' | 'PropellerAds' | 'AdMob' | 'MyAdCashManual' | 'Direct';
 
 const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoading }) => {
   // General Fields
@@ -26,6 +26,8 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
   // Network Specific Fields
   const [zoneId, setZoneId] = useState(''); // MyAdCash & HilltopAds
   const [scriptUrl, setScriptUrl] = useState('https://jolly-garbage.com/dhm.FKzddPGVNWvnZpGrUM/TeUmy9puNZpU/lqkTPyTDY/3pMhT/UOxCMqjhQzt-Ndj/cDxYNZTnEZy/NRQn'); // HilltopAds
+  const [videoUrl, setVideoUrl] = useState(''); // Direct video (YouTube or MP4/WebM link)
+  const [tier, setTier] = useState('basic'); // App tier: basic / bronze / silver / gold
   const [customCode, setCustomCode] = useState(''); // Custom / PropellerAds / AdMob / MyAdCashManual
 
   useEffect(() => {
@@ -47,12 +49,17 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
         setExpiryDate(d.toISOString().split('T')[0]);
       }
 
+      setTier(ad.tier || 'basic');
+      setVideoUrl(ad.videoUrl || '');
+
       // Populate fields based on network type
       if (ad.network === 'MyAdCash') {
         setZoneId(ad.config?.zoneId || '');
       } else if (ad.network === 'HilltopAds') {
         setZoneId(ad.config?.zoneId || '');
-        setScriptUrl(ad.config?.scriptUrl || '');
+        setScriptUrl(ad.config?.scriptUrl || ad.scriptUrl || '');
+      } else if (ad.network === 'Direct') {
+        // videoUrl already populated above
       } else {
         // For Custom, PropellerAds, AdMob, MyAdCashManual we populate the raw code
         setCustomCode(ad.rawEmbedCode || '');
@@ -71,6 +78,8 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
       setExpiryDate(d.toISOString().split('T')[0]);
       
       setIsActive(true);
+      setVideoUrl('');
+      setTier('basic');
       setZoneId('');
       setScriptUrl('https://jolly-garbage.com/dhm.FKzddPGVNWvnZpGrUM/TeUmy9puNZpU/lqkTPyTDY/3pMhT/UOxCMqjhQzt-Ndj/cDxYNZTnEZy/NRQn');
       setCustomCode('');
@@ -106,6 +115,11 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
       const cleanScriptUrl = scriptUrl.trim();
       config = { zoneId: cleanZoneId, scriptUrl: cleanScriptUrl };
       innerAdCode = `<script src="${cleanScriptUrl}" data-zone="${cleanZoneId}"></script>`;
+
+    } else if (network === 'Direct') {
+      // Direct video: no embed code — the user app plays videoUrl natively.
+      config = {};
+      innerAdCode = '';
 
     } else {
       // Custom, PropellerAds, AdMob, MyAdCashManual
@@ -222,7 +236,14 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
       rawEmbedCode: finalCode, // This contains the full PRO template
       maxViews,
       expiryDate: expiryTimestamp,
-      isActive
+      isActive,
+      // Canonical fields the user app actually reads:
+      videoUrl: network === 'Direct' ? videoUrl.trim() : '',
+      scriptUrl: network === 'HilltopAds' ? scriptUrl.trim() : '',
+      reward: rewardAmount,
+      tier,
+      status: isActive ? 'active' : 'inactive',
+      views: ad?.views || 0
     });
   };
 
@@ -303,6 +324,7 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
                         <option value="PropellerAds">PropellerAds / Other</option>
                         <option value="AdMob">AdMob</option>
                         <option value="Custom">Custom Code</option>
+                        <option value="Direct">Direct Video (YouTube / MP4)</option>
                     </select>
                     <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
                         <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
@@ -373,6 +395,38 @@ const VideoAdModal: React.FC<VideoAdModalProps> = ({ ad, onClose, onSave, isLoad
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400">
                                 Scripts will be wrapped in the PRO full-screen player.
+                            </div>
+                        </>
+                    )}
+
+                    {network === 'Direct' && (
+                        <>
+                            <div>
+                                <label className="block text-gray-700 dark:text-gray-300 text-xs font-bold mb-1 uppercase tracking-wider">Video URL (YouTube or MP4 link)</label>
+                                <input 
+                                    type="url" 
+                                    value={videoUrl} 
+                                    onChange={e => setVideoUrl(e.target.value)} 
+                                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-600 text-gray-900 dark:text-white" 
+                                    placeholder="https://www.youtube.com/watch?v=... or https://example.com/ad.mp4"
+                                    required 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-gray-700 dark:text-gray-300 text-xs font-bold mb-1 uppercase tracking-wider">Tier</label>
+                                <select
+                                    value={tier}
+                                    onChange={e => setTier(e.target.value)}
+                                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-600 text-gray-900 dark:text-white"
+                                >
+                                    <option value="basic">Basic</option>
+                                    <option value="bronze">Bronze</option>
+                                    <option value="silver">Silver</option>
+                                    <option value="gold">Gold</option>
+                                </select>
+                            </div>
+                            <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-100 dark:bg-indigo-900/30 p-3 rounded-lg">
+                                ✓ Direct video: no ad network needed. The user app plays this video itself and pays the reward after the watch timer.
                             </div>
                         </>
                     )}
