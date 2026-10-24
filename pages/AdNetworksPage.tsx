@@ -10,7 +10,7 @@ import { MonitorPlay, Info } from 'lucide-react';
 // The app reads this document live, so Game ID / placement / reward changes
 // apply without an app update. The Unity SDK itself ships inside the app
 // (v1.2+); this page only carries its configuration.
-interface UnityAdsConfig {
+interface AdsNetworksConfig {
   unityEnabled: boolean;
   unityGameId: string;
   unityRewardedPlacementId: string;
@@ -18,9 +18,14 @@ interface UnityAdsConfig {
   unityTestMode: boolean;
   unityRewardAmount: number; // Rs. per completed rewarded view
   unityDailyLimit: number; // rewarded views per user per day; 0 = unlimited
+  startioEnabled: boolean;
+  startioAppId: string;
+  startioTestMode: boolean;
+  startioRewardAmount: number; // Rs. per completed rewarded view
+  startioDailyLimit: number; // rewarded views per user per day; 0 = unlimited
 }
 
-const UNITY_DEFAULTS: UnityAdsConfig = {
+const CONFIG_DEFAULTS: AdsNetworksConfig = {
   unityEnabled: false,
   unityGameId: '',
   unityRewardedPlacementId: '',
@@ -28,6 +33,11 @@ const UNITY_DEFAULTS: UnityAdsConfig = {
   unityTestMode: true,
   unityRewardAmount: 1,
   unityDailyLimit: 0,
+  startioEnabled: false,
+  startioAppId: '',
+  startioTestMode: true,
+  startioRewardAmount: 1,
+  startioDailyLimit: 10,
 };
 
 const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }> = ({ enabled, onChange, disabled }) => (
@@ -44,7 +54,7 @@ const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void;
 );
 
 const AdNetworksPage: React.FC = () => {
-  const [cfg, setCfg] = useState<UnityAdsConfig>(UNITY_DEFAULTS);
+  const [cfg, setCfg] = useState<AdsNetworksConfig>(CONFIG_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { addToast } = useToast();
@@ -52,7 +62,7 @@ const AdNetworksPage: React.FC = () => {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'app_settings', 'ads'), (snap) => {
       if (snap.exists()) {
-        setCfg(prev => ({ ...prev, ...(snap.data() as Partial<UnityAdsConfig>) }));
+        setCfg(prev => ({ ...prev, ...(snap.data() as Partial<AdsNetworksConfig>) }));
       }
       setLoading(false);
     }, () => {
@@ -62,12 +72,12 @@ const AdNetworksPage: React.FC = () => {
     return () => unsub();
   }, [addToast]);
 
-  const num = (key: 'unityRewardAmount' | 'unityDailyLimit') => ({
+  const num = (key: 'unityRewardAmount' | 'unityDailyLimit' | 'startioRewardAmount' | 'startioDailyLimit') => ({
     value: cfg[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
       setCfg(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 })),
   });
-  const txt = (key: 'unityGameId' | 'unityRewardedPlacementId' | 'unityInterstitialPlacementId') => ({
+  const txt = (key: 'unityGameId' | 'unityRewardedPlacementId' | 'unityInterstitialPlacementId' | 'startioAppId') => ({
     value: cfg[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
       setCfg(prev => ({ ...prev, [key]: e.target.value })),
@@ -84,6 +94,11 @@ const AdNetworksPage: React.FC = () => {
         unityTestMode: cfg.unityTestMode,
         unityRewardAmount: cfg.unityRewardAmount,
         unityDailyLimit: cfg.unityDailyLimit,
+        startioEnabled: cfg.startioEnabled,
+        startioAppId: cfg.startioAppId.trim(),
+        startioTestMode: cfg.startioTestMode,
+        startioRewardAmount: cfg.startioRewardAmount,
+        startioDailyLimit: cfg.startioDailyLimit,
       }, { merge: true });
       addToast('Ad network settings saved — the app will use them automatically.', 'success');
     } catch (e) {
@@ -176,6 +191,57 @@ const AdNetworksPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Start.io card */}
+      <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6 border border-gray-200 dark:border-slate-800">
+        <div className="flex items-start justify-between border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+              <MonitorPlay size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Start.io Ads</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Rewarded video ads from Start.io (StartApp). Fill in the App ID from your
+                Start.io portal (My Apps), then switch Start.io Ads on. Start.io serves ads
+                by App ID — there are no placement IDs.
+              </p>
+            </div>
+          </div>
+          <button onClick={save} disabled={saving} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition disabled:opacity-50 shrink-0">
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2">
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Enable Start.io Ads</span>
+            <Toggle enabled={cfg.startioEnabled} onChange={(v) => setCfg(prev => ({ ...prev, startioEnabled: v }))} />
+          </div>
+          <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2">
+            <div>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Test Mode</span>
+              <p className="text-xs text-gray-400 dark:text-gray-500">On = Start.io test ads. Turn OFF for live revenue.</p>
+            </div>
+            <Toggle enabled={cfg.startioTestMode} onChange={(v) => setCfg(prev => ({ ...prev, startioTestMode: v }))} />
+          </div>
+          <div>
+            <label className={labelCls}>App ID</label>
+            <input className={inputCls} placeholder="From Start.io portal → My Apps → your app" {...txt('startioAppId')} />
+            <p className={helpCls}>The numeric App ID of your Start.io app.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Reward per Completed View (Rs.)</label>
+            <input type="number" min="0" step="0.1" className={inputCls} {...num('startioRewardAmount')} />
+            <p className={helpCls}>Amount credited to the user for each fully watched rewarded ad.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Daily Limit per User</label>
+            <input type="number" min="0" step="1" className={inputCls} {...num('startioDailyLimit')} />
+            <p className={helpCls}>Maximum rewarded ads one user can earn from per day. 0 = unlimited.</p>
+          </div>
+        </div>
+      </div>
+
       {/* How it works */}
       <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-lg p-5 flex gap-3">
         <Info size={18} className="text-indigo-600 dark:text-indigo-300 shrink-0 mt-0.5" />
@@ -183,7 +249,7 @@ const AdNetworksPage: React.FC = () => {
           <p className="font-semibold mb-1">How it works</p>
           <ul className="list-disc pl-5 space-y-1 text-indigo-800 dark:text-indigo-200/90">
             <li>Changes saved here apply to the app automatically — users do not need an update for Game ID, placement or reward changes.</li>
-            <li>The Unity SDK itself ships inside the app (v1.2 and above). Older app versions simply do not show Unity ads.</li>
+            <li>The Unity SDK ships inside the app (v1.2 and above) and the Start.io SDK ships inside the app (v1.5 and above). Older app versions simply do not show those ads.</li>
             <li>Keep Test Mode on while testing. Only turn it off once the Game ID is live in your Unity Dashboard, otherwise no real ads will fill.</li>
           </ul>
         </div>
