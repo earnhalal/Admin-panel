@@ -15,7 +15,7 @@ export interface CachedUser {
   [key: string]: any;
 }
 
-const TTL_MS = 5 * 60 * 1000;
+const TTL_MS = 30 * 60 * 1000;
 let cache: { at: number; users: CachedUser[] } | null = null;
 let inflight: Promise<CachedUser[]> | null = null;
 
