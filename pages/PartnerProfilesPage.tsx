@@ -71,6 +71,8 @@ const PartnerProfilesPage: React.FC = () => {
             });
             return merged;
         });
+    }).catch((error) => {
+        console.error("Error loading Firestore users:", error);
     });
 
     // 3. Listen to booster purchases

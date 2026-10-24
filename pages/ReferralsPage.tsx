@@ -1,7 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { useToast } from '../contexts/ToastContext';
-import { get, ref } from 'firebase/database';
-import { rtdb } from '../services/firebase';
+import React from 'react';
 
 const ReferralsPage: React.FC = () => {
     return (

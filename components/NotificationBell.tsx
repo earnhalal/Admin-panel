@@ -43,6 +43,8 @@ const NotificationBell: React.FC = () => {
                     }
                     return otherNotifs;
                 });
+            }, (error) => {
+                console.error("Notification listener error:", error);
             });
         });
 

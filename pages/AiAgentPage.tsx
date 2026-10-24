@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, query, orderBy, limit, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where, orderBy, limit, setDoc } from 'firebase/firestore';
 import { ref as rtdbRef, onValue } from 'firebase/database';
 import { db, rtdb } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
@@ -58,22 +58,21 @@ const AiAgentPage: React.FC = () => {
 
   useEffect(() => {
     const unsubs: (() => void)[] = [];
-    const watch = (col: string, field: string | null, key: keyof typeof counts) => {
-      const q = field
-        ? query(collection(db, col))
-        : query(collection(db, col));
+    // Pending counts come from server-side status queries. Listening to
+    // the whole collections and filtering client-side (the old code —
+    // both branches of its ternary built the same unfiltered query)
+    // re-downloaded every deposit/order/request/withdrawal on any
+    // change for as long as this page stayed open.
+    const watch = (col: string, key: keyof typeof counts) => {
+      const q = query(collection(db, col), where('status', 'in', ['pending', 'Pending']));
       unsubs.push(onSnapshot(q, (snap) => {
-        const n = snap.docs.filter(d => {
-          const s = String((d.data() as any).status ?? '').toLowerCase();
-          return field ? s === field : true;
-        }).length;
-        setCounts(prev => ({ ...prev, [key]: n }));
+        setCounts(prev => ({ ...prev, [key]: snap.size }));
       }, () => {}));
     };
-    watch('deposits', 'pending', 'deposit');
-    watch('promotion_orders', 'pending', 'promotion');
-    watch('partnerRequests', 'pending', 'partner');
-    watch('withdrawals', 'pending', 'withdrawal');
+    watch('deposits', 'deposit');
+    watch('promotion_orders', 'promotion');
+    watch('partnerRequests', 'partner');
+    watch('withdrawals', 'withdrawal');
     unsubs.push(onValue(rtdbRef(rtdb, 'pending_requests'), (snap) => {
       setCounts(prev => ({ ...prev, joining: snap.exists() ? Object.keys(snap.val() || {}).length : 0 }));
     }, () => {}));

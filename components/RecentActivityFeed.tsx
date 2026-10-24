@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Users, ArrowUpRight, ArrowDownToLine, Clock } from 'lucide-react';
 
@@ -21,8 +21,11 @@ const RecentActivityFeed: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Listen to recent deposits
-        const depositsQuery = query(collection(db, 'deposits'), orderBy('createdAt', 'desc'), limit(5));
+        // Listen to recent deposits. App-written deposits carry a
+        // `date` string, not `createdAt` — ordering by createdAt made
+        // Firestore exclude every one of them, so this half of the
+        // feed stayed empty. Fetch a bounded set, sort client-side.
+        const depositsQuery = query(collection(db, 'deposits'), limit(100));
         const unsubDeposits = onSnapshot(depositsQuery, (snapshot) => {
             const items = snapshot.docs.map(doc => {
                 const data = doc.data();
@@ -30,14 +33,18 @@ const RecentActivityFeed: React.FC = () => {
                     id: doc.id,
                     type: 'deposit' as const,
                     text: `New ${data.type || 'deposit'} request of Rs ${data.amount}`,
-                    timestamp: data.createdAt?.toDate() || new Date()
+                    timestamp: data.date ? new Date(data.date) : (data.createdAt?.toDate() || new Date(0))
                 };
-            });
+            }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5);
             updateActivities(items);
+        }, (error) => {
+            console.error("Error fetching recent deposits:", error);
+            setLoading(false);
         });
 
-        // Listen to recent withdrawals
-        const withdrawalsQuery = query(collection(db, 'withdrawals'), orderBy('createdAt', 'desc'), limit(5));
+        // Listen to recent withdrawals. App-written withdrawals carry
+        // a `timestamp`, not `createdAt` — same fix as deposits above.
+        const withdrawalsQuery = query(collection(db, 'withdrawals'), limit(100));
         const unsubWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
             const items = snapshot.docs.map(doc => {
                 const data = doc.data();
@@ -45,10 +52,13 @@ const RecentActivityFeed: React.FC = () => {
                     id: doc.id,
                     type: 'withdrawal' as const,
                     text: `Withdrawal request of Rs ${data.amount}`,
-                    timestamp: data.createdAt?.toDate() || new Date()
+                    timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : (data.date ? new Date(data.date) : (data.createdAt?.toDate() || new Date(0)))
                 };
-            });
+            }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5);
             updateActivities(items);
+        }, (error) => {
+            console.error("Error fetching recent withdrawals:", error);
+            setLoading(false);
         });
 
         const updateActivities = (newItems: ActivityItem[]) => {

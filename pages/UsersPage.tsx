@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, updateDoc, setDoc, runTransaction, writeBatch, getDoc, increment, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, updateDoc, setDoc, runTransaction, writeBatch, getDoc, increment, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
 import { ref, update, set, onValue, get, serverTimestamp, increment as rtdbIncrement } from 'firebase/database';
 import UserEditModal from '../components/UserEditModal';
@@ -92,29 +92,29 @@ const UsersPage: React.FC = () => {
         setLoading(false);
     });
 
-    // 2. Listen to Firestore users for profile enrichment (email, username, etc.)
-    const firestoreUsersRef = collection(db, 'users');
-    const unsubscribeFirestore = onSnapshot(firestoreUsersRef, (snapshot) => {
-        const firestoreData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        } as User));
-        
-        setUsers(prev => {
-            return prev.map(u => {
-                const fUser = firestoreData.find(fu => fu.id === u.id);
-                if (fUser) {
-                    return { ...u, ...fUser, balance: u.balance, status: u.status }; // RTDB balance/status takes precedence
-                }
-                return u;
+    // 2. Load Firestore users once (shared session cache) for profile
+    // enrichment (email, username, etc.) — a live listener on the whole
+    // 3,000+ doc collection re-billed reads on every user change.
+    let active = true;
+    getAllUsersCached()
+        .then((firestoreData) => {
+            if (!active) return;
+            setUsers(prev => {
+                return prev.map(u => {
+                    const fUser = (firestoreData as User[]).find(fu => fu.id === u.id);
+                    if (fUser) {
+                        return { ...u, ...fUser, balance: u.balance, status: u.status }; // RTDB balance/status takes precedence
+                    }
+                    return u;
+                });
             });
+        })
+        .catch((error) => {
+            console.error("Error fetching users from Firestore:", error);
         });
-    }, (error) => {
-        console.error("Error fetching users from Firestore:", error);
-    });
 
     return () => {
-        unsubscribeFirestore();
+        active = false;
         unsubscribeRTDB();
     };
   }, [addToast]);
