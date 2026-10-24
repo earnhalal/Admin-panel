@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, getDoc, query, where, Timestamp, runTransaction, deleteDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
+import { ref as dbRef, update as rtdbUpdate, increment as rtdbIncrement } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import Pagination from '../components/Pagination';
@@ -151,15 +152,8 @@ const SocialTaskSubmissionsPage: React.FC = () => {
         
         // Also update RTDB directly
         try {
-            const { ref: dbRef, set: dbSet } = await import('firebase/database');
-            const { rtdb } = await import('../services/firebase');
-            const rtdbBalanceRef = dbRef(rtdb, `users/${submission.userId}/balance`);
             const rtdbUserRef = dbRef(rtdb, `users/${submission.userId}`);
-            
-            const rtdbGet = (await import('firebase/database')).get;
-            const rtdbIncrement = (await import('firebase/database')).increment;
-            const rtdbUpdate = (await import('firebase/database')).update;
-            
+
             await rtdbUpdate(rtdbUserRef, {
                 balance: rtdbIncrement(submission.reward),
                 totalEarnings: rtdbIncrement(submission.reward)

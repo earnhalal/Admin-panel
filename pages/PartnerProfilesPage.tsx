@@ -82,7 +82,7 @@ const PartnerProfilesPage: React.FC = () => {
       })) as Purchase[];
       setPurchases(purchaseData);
       setLoading(false);
-    });
+    }, () => setLoading(false));
 
     return () => {
       unsubscribeRTDB();

@@ -55,7 +55,7 @@ const BoosterStorePage: React.FC = () => {
         const unsubBoosters = onSnapshot(collection(db, 'boosters'), (snapshot) => {
             setBoosters(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booster)));
             setLoading(false);
-        });
+        }, () => setLoading(false));
 
         const unsubRequests = onSnapshot(query(collection(db, 'boosterPurchases'), where('status', '==', 'pending')), async (snapshot) => {
             const reqData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseRequest));
