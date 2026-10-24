@@ -34,6 +34,9 @@ const RecentActivityFeed: React.FC = () => {
                 };
             });
             updateActivities(items);
+        }, (error) => {
+            console.error("Error fetching recent deposits:", error);
+            setLoading(false);
         });
 
         // Listen to recent withdrawals
@@ -49,6 +52,9 @@ const RecentActivityFeed: React.FC = () => {
                 };
             });
             updateActivities(items);
+        }, (error) => {
+            console.error("Error fetching recent withdrawals:", error);
+            setLoading(false);
         });
 
         const updateActivities = (newItems: ActivityItem[]) => {

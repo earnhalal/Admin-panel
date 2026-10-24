@@ -135,6 +135,7 @@ const SocialTasksPage: React.FC = () => {
     }, (error) => {
       console.error("Error fetching social tasks:", error);
       addToast("Failed to fetch social tasks.", "error");
+      setLoading(false);
     });
 
     // 2. Fetch Pending Promotion Orders

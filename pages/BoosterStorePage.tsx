@@ -64,6 +64,8 @@ const BoosterStorePage: React.FC = () => {
                 return {...req, userEmail: userSnap.exists() ? (userSnap.data() as User).email : 'Unknown'};
             }));
             setRequests(enrichedData);
+        }, (error) => {
+            console.error("Error fetching booster requests:", error);
         });
 
         return () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, Timestamp, doc, updateDoc, getDoc, getDocs, increment, addDoc } from 'firebase/firestore';
 import { db, rtdb } from '../services/firebase';
+import { getAllUsersCached } from '../services/usersCache';
 import { ref, onValue, set, remove, get, update, increment as rtdbIncrement } from 'firebase/database';
 import { useToast } from '../contexts/ToastContext';
 import BarChart from '../components/BarChart';
@@ -148,17 +149,17 @@ const DashboardPage: React.FC = () => {
         setLoadingUsers(false);
     });
 
-    // Firestore Listener for users
-    const fsUsersRef = collection(db, 'users');
-    const unsubscribeFsUsers = onSnapshot(fsUsersRef, (snapshot) => {
-        const usersList = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-        setFsUsers(usersList);
-    }, (error) => {
-        console.error("Error fetching Firestore users:", error);
-    });
+    // Firestore users (profile data merged with the RTDB list below) —
+    // loaded once through the shared session cache instead of a live
+    // listener on the whole 3,000+ doc collection, which re-billed
+    // reads on every user change for as long as the dashboard was open.
+    getAllUsersCached()
+        .then((cachedUsers) => {
+            setFsUsers(cachedUsers as any[]);
+        })
+        .catch((error) => {
+            console.error("Error fetching Firestore users:", error);
+        });
 
     // Firestore Listener for pending withdrawals
     const withdrawalsQuery = query(collection(db, 'withdrawals'), where('status', 'in', ['pending', 'Pending']));
@@ -215,7 +216,6 @@ const DashboardPage: React.FC = () => {
       unsubscribeRequests();
       unsubscribeRTDB();
       unsubscribeDeposits();
-      unsubscribeFsUsers();
     };
   }, []);
 
