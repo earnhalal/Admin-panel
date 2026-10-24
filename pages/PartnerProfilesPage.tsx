@@ -15,6 +15,7 @@ interface UserProfile {
   email?: string;
   isPartner?: boolean;
   activePlan?: string;
+  partnerTier?: string;
   balance?: number;
   totalEarnings?: number;
 }
@@ -96,7 +97,16 @@ const PartnerProfilesPage: React.FC = () => {
       const userPurchases = purchases.filter(p => p.userId === user.id);
       
       let plan = user.activePlan || 'Standard';
-      
+
+      // The partner approval flow records the tier on the user doc as
+      // partnerTier ('silver' | 'bronze' | 'gold') — that is the real
+      // tier. Honour it before the booster-purchase inference below,
+      // which may still confirm or upgrade it.
+      const recordedTier = (user.partnerTier || '').toLowerCase();
+      if (recordedTier === 'gold') plan = 'Gold';
+      else if (recordedTier === 'silver') plan = 'Silver';
+      else if (recordedTier === 'bronze') plan = 'Bronze';
+
       // Determine plan based on purchase name, with more flexible matching
       const gold = userPurchases.find(p => p.boosterName.toLowerCase().includes('gold'));
       const silver = userPurchases.find(p => p.boosterName.toLowerCase().includes('silver') || p.boosterName.toLowerCase().includes('sliver'));

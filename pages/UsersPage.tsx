@@ -19,27 +19,53 @@ export interface User {
   balance: number;
   isPaid: boolean;
   isActivated?: boolean;
-  status?: 'active' | 'pending' | 'blocked';
+  // Real account status as stored on the user doc: 'active',
+  // 'Inactive' or 'pending' (the panel also writes 'blocked').
+  status?: string;
   paymentStatus: 'pending' | 'verified' | 'rejected' | 'none';
   submittedTransactionId?: string | null;
+  // Signup date: user docs carry the ISO string `joiningDate`
+  // (written by the app at signup) — there is no `createdAt`.
+  joiningDate?: string;
   createdAt?: any;
   lastLoginAt?: any;
   withdrawalPoints?: number;
   manualWithdrawUnlock?: boolean;
 }
 
-type PaymentStatusFilter = 'all' | 'pending' | 'verified' | 'rejected';
+type StatusFilter = 'all' | 'active' | 'inactive' | 'pending' | 'blocked';
 type SortConfig = { key: keyof User; direction: 'ascending' | 'descending' } | null;
 
-const PaymentStatusBadge: React.FC<{ status: User['paymentStatus'] }> = ({ status }) => (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold capitalize
-        ${status === 'verified' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-          status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
-          status === 'rejected' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400' : 
-          'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'}`}>
-      {status}
-    </span>
-);
+// The Status column shows the account status stored on the user doc
+// (`status`). Most docs never carry `paymentStatus` — it is only set
+// when the panel processes a joining-fee verification — so keying the
+// column/filter on it showed "None" for almost every user.
+const AccountStatusBadge: React.FC<{ status?: string }> = ({ status }) => {
+    const s = (status || '').toLowerCase();
+    const label = s ? s.charAt(0).toUpperCase() + s.slice(1) : 'None';
+    return (
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold
+            ${s === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+              s === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
+              s === 'blocked' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400' :
+              'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'}`}>
+          {label}
+        </span>
+    );
+};
+
+// Join date from the fields user docs actually carry: the ISO string
+// `joiningDate`, falling back to a Timestamp-like `createdAt` if one
+// ever appears.
+const getJoinedDate = (user: User): Date | null => {
+    const raw: any = (user as any).joiningDate || user.createdAt;
+    if (!raw) return null;
+    if (typeof raw.toDate === 'function') {
+        try { return raw.toDate(); } catch { return null; }
+    }
+    const d = raw instanceof Date ? raw : new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+};
 
 const UsersPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -47,11 +73,11 @@ const UsersPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState<PaymentStatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [actionLoading, setActionLoading] = useState<{[key: string]: boolean}>({});
   const { addToast } = useToast();
   
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'joiningDate', direction: 'descending' });
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [isSyncingReferrals, setIsSyncingReferrals] = useState(false);
@@ -523,7 +549,7 @@ const UsersPage: React.FC = () => {
     let sortableUsers = [...users];
 
     sortableUsers = sortableUsers.filter(user => {
-        if (paymentFilter !== 'all' && user.paymentStatus !== paymentFilter) return false;
+        if (statusFilter !== 'all' && (user.status || '').toLowerCase() !== statusFilter) return false;
         const term = searchTerm.toLowerCase();
         return (user.email?.toLowerCase().includes(term) || user.username?.toLowerCase().includes(term));
     });
@@ -543,7 +569,7 @@ const UsersPage: React.FC = () => {
       });
     }
     return sortableUsers;
-  }, [users, searchTerm, paymentFilter, sortConfig]);
+  }, [users, searchTerm, statusFilter, sortConfig]);
 
   const paginatedUsers = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -619,13 +645,14 @@ const UsersPage: React.FC = () => {
             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <select
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 appearance-none"
-                value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value as PaymentStatusFilter)}
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             >
                 <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
                 <option value="pending">Pending</option>
-                <option value="verified">Verified</option>
-                <option value="rejected">Rejected</option>
+                <option value="blocked">Blocked</option>
             </select>
         </div>
       </div>
@@ -644,8 +671,8 @@ const UsersPage: React.FC = () => {
               </th>
               <th onClick={() => requestSort('username')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">User</th>
               <th onClick={() => requestSort('balance')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Balance</th>
-              <th onClick={() => requestSort('paymentStatus')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Status</th>
-              <th onClick={() => requestSort('createdAt')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Joined</th>
+              <th onClick={() => requestSort('status')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Status</th>
+              <th onClick={() => requestSort('joiningDate')} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600">Joined</th>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
@@ -668,10 +695,10 @@ const UsersPage: React.FC = () => {
                   Rs {(user.balance ?? 0).toFixed(2)}
                 </td>
                 <td className="px-6 py-4">
-                  <PaymentStatusBadge status={user.paymentStatus} />
+                  <AccountStatusBadge status={user.status} />
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500">
-                  {user.createdAt ? user.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                  {(() => { const d = getJoinedDate(user); return d ? d.toLocaleDateString() : 'N/A'; })()}
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">
@@ -716,7 +743,7 @@ const UsersPage: React.FC = () => {
                               <p className="text-xs text-gray-500">{user.email}</p>
                           </div>
                       </div>
-                      <PaymentStatusBadge status={user.paymentStatus} />
+                      <AccountStatusBadge status={user.status} />
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-t border-gray-50 dark:border-slate-800">

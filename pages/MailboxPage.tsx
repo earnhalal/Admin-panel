@@ -91,7 +91,7 @@ const MailboxPage: React.FC = () => {
           <Mail size={24} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Broadcast Mailbox</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Broadcast Mailbox</h1>
           <p className="text-slate-400 text-sm">Send messages to all users in the app</p>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Users, ArrowUpRight, ArrowDownToLine, Clock } from 'lucide-react';
@@ -16,68 +16,110 @@ const ICONS = {
     deposit: <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-green-600"><ArrowDownToLine size={16} /></div>,
 };
 
+// Docs in this project store dates in several shapes: Firestore
+// Timestamps, ISO strings (the app writes `date` / `joiningDate` as
+// ISO), epoch numbers, and older locale strings like "24/10/2026".
+// `new Date(value)` silently yields Invalid Date for some of them
+// (a Timestamp object, a DD/MM/YYYY string), and an Invalid Date
+// poisons every sort it touches — items with real, newer dates sank
+// below older ones. Normalise everything to a valid Date here.
+const parseActivityDate = (value: any): Date => {
+    if (value == null) return new Date(0);
+    if (value instanceof Date) return isNaN(value.getTime()) ? new Date(0) : value;
+    if (typeof value.toDate === 'function') {
+        try {
+            const d = value.toDate();
+            if (d && !isNaN(d.getTime())) return d;
+        } catch { /* fall through */ }
+    }
+    if (typeof value === 'number') {
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? new Date(0) : d;
+    }
+    if (typeof value === 'string') {
+        const parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) return parsed;
+        // DD/MM/YYYY (optionally with a time) — the format `new Date`
+        // cannot parse in most browsers.
+        const m = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+        if (m) {
+            const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+    if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+    return new Date(0);
+};
+
+const DISPLAY_COUNT = 10;
+// The collections are fetched unordered (document-ID order), so the
+// limit is a window over IDs, NOT over time. At limit(100) the newest
+// deposits (102+ docs) could fall outside the window entirely and
+// never reach the feed. 250 covers the current collections with
+// headroom while staying a bounded read.
+const FETCH_LIMIT = 250;
+
 const RecentActivityFeed: React.FC = () => {
     const [activities, setActivities] = useState<ActivityItem[]>([]);
     const [loading, setLoading] = useState(true);
+    // Latest snapshot per source; the merged feed is always rebuilt
+    // from BOTH full lists, sorted by real timestamp desc, and only
+    // then sliced to the display count. (Previously each source was
+    // sliced to its own top 5 before merging, and items accumulated
+    // in state across snapshots.)
+    const sourceItems = useRef<{ deposits: ActivityItem[]; withdrawals: ActivityItem[] }>({ deposits: [], withdrawals: [] });
 
     useEffect(() => {
-        // Listen to recent deposits. App-written deposits carry a
-        // `date` string, not `createdAt` — ordering by createdAt made
-        // Firestore exclude every one of them, so this half of the
-        // feed stayed empty. Fetch a bounded set, sort client-side.
-        const depositsQuery = query(collection(db, 'deposits'), limit(100));
+        const rebuild = () => {
+            const combined = [...sourceItems.current.deposits, ...sourceItems.current.withdrawals];
+            const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+            setActivities(unique.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, DISPLAY_COUNT));
+            setLoading(false);
+        };
+
+        // App-written deposits carry a `date` string, not `createdAt` —
+        // ordering/filtering on createdAt excluded every one of them.
+        const depositsQuery = query(collection(db, 'deposits'), limit(FETCH_LIMIT));
         const unsubDeposits = onSnapshot(depositsQuery, (snapshot) => {
-            const items = snapshot.docs.map(doc => {
+            sourceItems.current.deposits = snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
                     id: doc.id,
                     type: 'deposit' as const,
                     text: `New ${data.type || 'deposit'} request of Rs ${data.amount}`,
-                    timestamp: data.date ? new Date(data.date) : (data.createdAt?.toDate() || new Date(0))
+                    timestamp: parseActivityDate(data.date ?? data.timestamp ?? data.createdAt)
                 };
-            }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5);
-            updateActivities(items);
+            });
+            rebuild();
         }, (error) => {
             console.error("Error fetching recent deposits:", error);
             setLoading(false);
         });
 
-        // Listen to recent withdrawals. App-written withdrawals carry
-        // a `timestamp`, not `createdAt` — same fix as deposits above.
-        const withdrawalsQuery = query(collection(db, 'withdrawals'), limit(100));
+        // App-written withdrawals carry a `timestamp`, not `createdAt`.
+        const withdrawalsQuery = query(collection(db, 'withdrawals'), limit(FETCH_LIMIT));
         const unsubWithdrawals = onSnapshot(withdrawalsQuery, (snapshot) => {
-            const items = snapshot.docs.map(doc => {
+            sourceItems.current.withdrawals = snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
                     id: doc.id,
                     type: 'withdrawal' as const,
                     text: `Withdrawal request of Rs ${data.amount}`,
-                    timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : (data.date ? new Date(data.date) : (data.createdAt?.toDate() || new Date(0)))
+                    timestamp: parseActivityDate(data.timestamp ?? data.date ?? data.createdAt)
                 };
-            }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5);
-            updateActivities(items);
+            });
+            rebuild();
         }, (error) => {
             console.error("Error fetching recent withdrawals:", error);
             setLoading(false);
         });
-
-        const updateActivities = (newItems: ActivityItem[]) => {
-            setActivities(prev => {
-                const combined = [...prev, ...newItems];
-                // Remove duplicates by ID
-                const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-                // Sort by timestamp desc and limit to 10
-                return unique.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 10);
-            });
-            setLoading(false);
-        };
 
         return () => {
             unsubDeposits();
             unsubWithdrawals();
         };
     }, []);
-    
+
     const timeSince = (date: Date) => {
         const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
         if (seconds < 60) return "just now";
