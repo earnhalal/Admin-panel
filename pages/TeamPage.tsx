@@ -10,7 +10,9 @@ interface TeamMember {
   email: string;
   role: 'admin' | 'manager' | 'editor' | 'payment_manager';
   addedAt: any;
-  status: 'active' | 'pending';
+  // Optional: team docs created outside this page (e.g. the owner's
+  // bootstrap admin doc) may not carry a status field at all.
+  status?: 'active' | 'pending';
 }
 
 const TeamPage: React.FC = () => {
@@ -166,7 +168,7 @@ const TeamPage: React.FC = () => {
                     <td className="py-4">
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
                         <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                        {member.status}
+                        {member.status || 'active'}
                       </span>
                     </td>
                     <td className="py-4 text-right">

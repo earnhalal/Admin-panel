@@ -134,7 +134,10 @@ const DashboardPage: React.FC = () => {
             const usersList = Object.entries(data).map(([id, value]: [string, any]) => ({
                 id,
                 ...value,
-                createdAt: value.createdAt ? { toDate: () => new Date(value.createdAt) } : null
+                // RTDB user entries carry no createdAt — the signup date
+                // is the ISO string `joiningDate`. Fabricating null here
+                // used to wipe the real date in the merge below.
+                createdAt: value.createdAt ? { toDate: () => new Date(value.createdAt) } : (value.joiningDate ? { toDate: () => new Date(value.joiningDate) } : null)
             }));
             setRtdbUsers(usersList);
             setLoadingUsers(false);
@@ -380,6 +383,21 @@ const DashboardPage: React.FC = () => {
     }
   };
 
+  // User docs record the signup date as an ISO string in `joiningDate`
+  // (written by the app at signup, in both Firestore and RTDB) — there
+  // is no `createdAt` Timestamp on them, which is why the growth chart
+  // used to read 0 for every day. Resolve the join date from whichever
+  // representation a merged user carries.
+  const getJoinDate = (user: any): Date | null => {
+    if (user?.createdAt?.toDate) {
+      try { return user.createdAt.toDate(); } catch { /* fall through */ }
+    }
+    const raw = user?.joiningDate || user?.createdAt;
+    if (raw == null) return null;
+    const d = raw instanceof Date ? raw : new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
   const chartData = useMemo(() => {
     const data: { [key: string]: number } = {};
     const labels: string[] = [];
@@ -395,8 +413,8 @@ const DashboardPage: React.FC = () => {
         }
 
         allUsers.forEach(user => {
-          if (user.createdAt) {
-            const joinDate = user.createdAt.toDate();
+          const joinDate = getJoinDate(user);
+          if (joinDate) {
             const label = joinDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             if (data.hasOwnProperty(label)) {
               data[label]++;
@@ -416,8 +434,8 @@ const DashboardPage: React.FC = () => {
         }
 
         allUsers.forEach(user => {
-            if (user.createdAt) {
-                const joinDate = user.createdAt.toDate();
+            const joinDate = getJoinDate(user);
+            if (joinDate) {
                 if (joinDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr) {
                     const hour = joinDate.getHours();
                     const label = `${hour}:00`;
@@ -436,8 +454,8 @@ const DashboardPage: React.FC = () => {
 
         const currentYear = new Date().getFullYear();
         allUsers.forEach(user => {
-            if (user.createdAt) {
-                const joinDate = user.createdAt.toDate();
+            const joinDate = getJoinDate(user);
+            if (joinDate) {
                 if (joinDate.getFullYear() === currentYear) {
                     const month = months[joinDate.getMonth()];
                     data[month]++;
@@ -448,7 +466,8 @@ const DashboardPage: React.FC = () => {
         // Show by year
         const years = new Set<number>();
         allUsers.forEach(user => {
-            if (user.createdAt) years.add(user.createdAt.toDate().getFullYear());
+            const joinDate = getJoinDate(user);
+            if (joinDate) years.add(joinDate.getFullYear());
         });
         const sortedYears = Array.from(years).sort();
         if (sortedYears.length === 0) sortedYears.push(new Date().getFullYear());
@@ -460,8 +479,9 @@ const DashboardPage: React.FC = () => {
         });
 
         allUsers.forEach(user => {
-            if (user.createdAt) {
-                const label = user.createdAt.toDate().getFullYear().toString();
+            const joinDate = getJoinDate(user);
+            if (joinDate) {
+                const label = joinDate.getFullYear().toString();
                 data[label]++;
             }
         });

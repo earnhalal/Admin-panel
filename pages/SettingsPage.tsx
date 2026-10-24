@@ -230,16 +230,6 @@ const SettingsPage: React.FC = () => {
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">Spin Configuration</h2>
-                     {loading ? <p>Loading settings...</p> : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                           <NumberInput label="Spin Coins" value={settings.spinCoins} onChange={val => handleSettingChange('spinCoins', val)} />
-                           <NumberInput label="Daily Spin Limit" value={settings.spinDailyLimit} onChange={val => handleSettingChange('spinDailyLimit', val)} />
-                        </div>
-                     )}
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 shadow-md rounded-lg p-6">
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-slate-800 pb-4 mb-6">AI Auto-Pilot</h2>
 
                     {loading ? <p>Loading settings...</p> : (

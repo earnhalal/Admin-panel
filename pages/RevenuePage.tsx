@@ -102,7 +102,7 @@ const RevenuePage: React.FC = () => {
                 <StatCard title="Total Revenue" value={`Rs ${(revenueStats.total ?? 0).toFixed(2)}`} icon={<RevenueIcon className="w-6 h-6 text-indigo-500" />} />
                 <StatCard title="From Deposits" value={`Rs ${(revenueStats.depositFees ?? 0).toFixed(2)}`} icon={<DepositIcon className="w-6 h-6 text-indigo-500" />} />
                 <StatCard title="From Withdrawals" value={`Rs ${(revenueStats.withdrawalFees ?? 0).toFixed(2)}`} icon={<WithdrawalIcon className="w-6 h-6 text-indigo-500" />} />
-                <StatCard title="From Tasks" value={`Rs {((revenueStats.taskCommissions ?? 0) + (revenueStats.listingFees ?? 0)).toFixed(2)}`} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} />
+                <StatCard title="From Tasks" value={`Rs ${((revenueStats.taskCommissions ?? 0) + (revenueStats.listingFees ?? 0)).toFixed(2)}`} icon={<TasksIcon className="w-6 h-6 text-indigo-500" />} />
             </div>
 
             <div className="mt-8 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg">
