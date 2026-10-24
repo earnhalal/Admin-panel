@@ -110,7 +110,7 @@ const HistoryPage: React.FC = () => {
         list.sort((a, b) => (b.approvedAt || b.rejectedAt || 0) - (a.approvedAt || a.rejectedAt || 0));
         setWithdrawalHistory(list);
         setLoading(false);
-    });
+    }, () => setLoading(false));
 
     return () => {
         unsubJoiningApproved();

@@ -72,6 +72,8 @@ const AppControlSettings: React.FC = () => {
       if (snap.exists()) {
         setCfg(prev => ({ ...prev, ...(snap.data() as Partial<AppControl>) }));
       }
+    }, () => {
+      addToast('Failed to load app control settings.', 'error');
     });
     return () => unsub();
   }, []);
@@ -157,7 +159,7 @@ const SettingsPage: React.FC = () => {
                 setSettings(prev => ({ ...prev, ...data }));
             }
             setLoading(false);
-        });
+        }, () => setLoading(false));
         return () => unsubscribe();
     }, []);
 

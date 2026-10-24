@@ -49,6 +49,9 @@ const AiAgentPage: React.FC = () => {
     const unsub = onSnapshot(doc(db, 'agent_settings', 'config'), (snap) => {
       if (snap.exists()) setSettings({ ...DEFAULT_AGENT_SETTINGS, ...(snap.data() as any) });
       setSettingsLoaded(true);
+    }, () => {
+      setSettingsLoaded(true);
+      addToast('Failed to load agent settings. Check the Firestore rules.', 'error');
     });
     return () => unsub();
   }, []);
