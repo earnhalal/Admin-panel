@@ -67,6 +67,21 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update: if isAdmin() || isPaymentManager();
       allow delete: if isAdmin();
+
+      // In-app payment proof image (written once by the deposit owner,
+      // read by the owner and by admins/payment managers).
+      match /proof/{docId} {
+        allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAdmin();
+      }
+
+      // Verification chat — the user reads the thread on their own
+      // deposit; only admins (and the agent via the Admin SDK) write.
+      match /chat/{msgId} {
+        allow read: if isAdmin() || isPaymentManager() || (isAuthenticated() && get(/databases/$(database)/documents/deposits/$(id)).data.userId == request.auth.uid);
+        allow write: if isAdmin();
+      }
     }
 
     // ---- Withdrawals ----

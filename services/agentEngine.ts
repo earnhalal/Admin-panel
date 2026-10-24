@@ -132,7 +132,11 @@ async function processDeposits(s: AgentSettings, out: AgentRunResult) {
     txCounts.set(tx, (txCounts.get(tx) || 0) + 1);
     if (norm(d.status) === 'approved') txApproved.add(tx);
   }
-  for (const d of all.filter(x => isPending(x.status))) {
+  // Screenshot-upload deposits are decided by screenshot verification
+  // (owner / agent proof pass), never by transaction-ID rules — their
+  // transactionId is the shared placeholder 'In-app upload', which
+  // would false-positive as a duplicate here.
+  for (const d of all.filter(x => isPending(x.status) && (x as any).proofMethod !== 'upload')) {
     const tx = txOf(d);
     if (!d.userId || !(Number(d.amount) > 0)) {
       await rejectDeposit(d, 'Invalid deposit amount or missing user');
