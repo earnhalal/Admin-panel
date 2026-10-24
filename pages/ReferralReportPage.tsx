@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { rtdb, db } from '../services/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { getAllUsersCached } from '../services/usersCache';
 import { ref, onValue, get } from 'firebase/database';
 import { 
   Users, 
@@ -76,9 +77,9 @@ const ReferralReportPage: React.FC = () => {
                 // Identity (username/email) lives in Firestore — RTDB users
                 // only carry balance/status, so names must come from here.
                 try {
-                    const fsSnap = await getDocs(collection(db, 'users'));
+                    const fsUsers = await getAllUsersCached();
                     const map: {[uid: string]: any} = {};
-                    fsSnap.forEach(d => { map[d.id] = d.data(); });
+                    fsUsers.forEach(u => { const { id, ...data } = u; map[id] = data; });
                     setFsUsers(map);
                 } catch (e) { /* names fall back to RTDB data */ }
             } catch (error) {

@@ -9,6 +9,7 @@ import { Check, X, MoreHorizontal, Search, Filter } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import Checkbox from '../components/Checkbox';
 import { Link } from 'react-router-dom';
+import { getAllUsersCached } from '../services/usersCache';
 
 export interface User {
   id: string;
@@ -471,10 +472,10 @@ const UsersPage: React.FC = () => {
           }
 
           // Process Firestore Users (In case older users only exist in Firestore)
-          const fsUsersSnap = await getDocs(collection(db, 'users'));
-          for (const docSnap of fsUsersSnap.docs) {
-              const fsData = docSnap.data();
-              const userId = docSnap.id;
+          const fsUsers = await getAllUsersCached();
+          for (const fsUser of fsUsers) {
+              const fsData = fsUser;
+              const userId = fsUser.id;
               // If not already in RTDB or missing referredBy in RTDB
               if (!rtdbUsers[userId] || !(rtdbUsers[userId].referredBy || rtdbUsers[userId].referrerUid || rtdbUsers[userId].referrerId || rtdbUsers[userId].invitedBy)) {
                    fixedCount += await processOldReferral(userId, fsData);

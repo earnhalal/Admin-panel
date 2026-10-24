@@ -121,6 +121,10 @@ async function rejectDeposit(d: any, reason: string) {
 }
 
 async function processDeposits(s: AgentSettings, out: AgentRunResult) {
+  // Quota guard: skip the full read when nothing is pending (the full
+  // set is only needed for transaction-ID duplicate counts).
+  const pendingSnap = await getDocs(query(collection(db, 'deposits'), where('status', 'in', ['Pending', 'pending'])));
+  if (pendingSnap.empty) return;
   const snap = await getDocs(collection(db, 'deposits'));
   const all = snap.docs.map(x => ({ id: x.id, ...(x.data() as any) }));
   const txOf = (d: any) => norm(d.transactionId || d.txnId || d.transactionID);
@@ -327,6 +331,9 @@ async function rejectPartner(req: any, reason: string) {
 }
 
 async function processPartner(out: AgentRunResult) {
+  // Quota guard: skip the full read when nothing is pending.
+  const pendingSnap = await getDocs(query(collection(db, 'partnerRequests'), where('status', 'in', ['pending', 'Pending'])));
+  if (pendingSnap.empty) return;
   const snap = await getDocs(collection(db, 'partnerRequests'));
   const all = snap.docs.map(x => ({ id: x.id, ...(x.data() as any) }));
   const txCounts = new Map<string, number>();
@@ -352,7 +359,8 @@ async function processPartner(out: AgentRunResult) {
 /* ----------------------------- WITHDRAWALS ---------------------------- */
 
 async function processWithdrawalsGuard(out: AgentRunResult) {
-  const snap = await getDocs(collection(db, 'withdrawals'));
+  // Only pending withdrawals are ever touched here — load just those.
+  const snap = await getDocs(query(collection(db, 'withdrawals'), where('status', 'in', ['pending', 'Pending'])));
   for (const x of snap.docs) {
     const w: any = { id: x.id, ...x.data() };
     if (!isPending(w.status)) continue;

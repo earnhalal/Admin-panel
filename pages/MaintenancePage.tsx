@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { collection, getDocs, doc, setDoc, addDoc, serverTimestamp, increment, updateDoc } from 'firebase/firestore';
 import { get, ref, update, increment as rtdbIncrement } from 'firebase/database';
 import { db, rtdb } from '../services/firebase';
+import { getAllUsersCached } from '../services/usersCache';
 import { Wrench, PlayCircle, Loader2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
@@ -41,11 +42,11 @@ const MaintenancePage: React.FC = () => {
             });
             
             // Fetch FS
-            const fsSnap = await getDocs(collection(db, 'users'));
-            fsSnap.forEach(docSnap => {
-                const data = docSnap.data();
-                const existing = allUsersMap.get(docSnap.id) || { id: docSnap.id };
-                allUsersMap.set(docSnap.id, { ...existing, ...data });
+            const fsUsers = await getAllUsersCached();
+            fsUsers.forEach(fsUser => {
+                const { id: fsId, ...data } = fsUser;
+                const existing = allUsersMap.get(fsId) || { id: fsId };
+                allUsersMap.set(fsId, { ...existing, ...data });
             });
             
             const loadedUsers = Array.from(allUsersMap.values()) as UserData[];
@@ -130,11 +131,11 @@ const MaintenancePage: React.FC = () => {
             });
             
             addLog('Fetching commission data from Firestore...', 'info');
-            const fsSnap = await getDocs(collection(db, 'users'));
-            fsSnap.forEach(docSnap => {
-                const data = docSnap.data();
-                const existing = allUsersMap.get(docSnap.id) || { id: docSnap.id };
-                allUsersMap.set(docSnap.id, { ...existing, ...data });
+            const fsUsers = await getAllUsersCached();
+            fsUsers.forEach(fsUser => {
+                const { id: fsId, ...data } = fsUser;
+                const existing = allUsersMap.get(fsId) || { id: fsId };
+                allUsersMap.set(fsId, { ...existing, ...data });
             });
             
             const allUsers = Array.from(allUsersMap.values());
