@@ -37,6 +37,7 @@ const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void;
 interface AppControl {
   paymentName: string;
   paymentNumber: string;
+  paymentIban: string;
   whatsappNumber: string;
   activationFee: number;
   partnerFee: number;
@@ -51,6 +52,7 @@ interface AppControl {
 const APP_DEFAULTS: AppControl = {
   paymentName: 'M-WASEEM',
   paymentNumber: '03338739929',
+  paymentIban: '',
   whatsappNumber: '923338739929',
   activationFee: 150,
   partnerFee: 1000,
@@ -118,6 +120,7 @@ const AppControlSettings: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div><label className={labelCls}>EasyPaisa Account Title</label><input className={inputCls} {...txt('paymentName')} /></div>
         <div><label className={labelCls}>EasyPaisa Account Number</label><input className={inputCls} {...txt('paymentNumber')} /></div>
+        <div><label className={labelCls}>EasyPaisa IBAN (Raast QR)</label><input className={inputCls} {...txt('paymentIban')} placeholder="PK36BANK0000000000000000" /></div>
         <div><label className={labelCls}>WhatsApp Number (country code, no +)</label><input className={inputCls} {...txt('whatsappNumber')} /></div>
         <div><label className={labelCls}>Joining / Activation Fee (Rs.)</label><input type="number" className={inputCls} {...num('activationFee')} /></div>
         <div><label className={labelCls}>Partner Fee (Rs.)</label><input type="number" className={inputCls} {...num('partnerFee')} /></div>
