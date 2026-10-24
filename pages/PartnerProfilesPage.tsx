@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { db, rtdb } from '../services/firebase';
+import { getAllUsersCached } from '../services/usersCache';
 import Spinner from '../components/Spinner';
 import { Award, Search, Users, Trophy, Star, ShieldCheck, ArrowLeft, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -56,12 +57,10 @@ const PartnerProfilesPage: React.FC = () => {
         }
     });
 
-    // 2. Listen to Firestore users
-    const unsubFSUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-        const fsUsersList = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        })) as UserProfile[];
+    // 2. Load Firestore users once per session (cached) — a live
+    // listener on the whole 3,000+ doc collection re-billed reads.
+    getAllUsersCached().then((cachedUsers) => {
+        const fsUsersList = cachedUsers as unknown as UserProfile[];
         
         setUsers(prev => {
             const merged = [...prev];
@@ -86,7 +85,6 @@ const PartnerProfilesPage: React.FC = () => {
 
     return () => {
       unsubscribeRTDB();
-      unsubFSUsers();
       unsubPurchases();
     };
   }, []);

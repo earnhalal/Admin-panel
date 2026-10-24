@@ -3,6 +3,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useToast } from '../contexts/ToastContext';
 import { runFraudDetection, SuspiciousUser } from '../services/aiService';
+import { getAllUsersCached } from '../services/usersCache';
 import { User } from './UsersPage';
 import { ShieldIcon } from '../components/icons/ShieldIcon';
 import Spinner from '../components/Spinner';
@@ -20,8 +21,7 @@ const FraudDetectionPage: React.FC = () => {
 
         try {
             setLogs(prev => [...prev, '🔍 Fetching all user data from the database...']);
-            const usersSnapshot = await getDocs(collection(db, 'users'));
-            const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+            const allUsers = (await getAllUsersCached()) as any as User[];
 
             if (allUsers.length === 0) {
                 setLogs(prev => [...prev, '✅ No users found to scan.']);
