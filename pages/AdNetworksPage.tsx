@@ -30,6 +30,12 @@ interface AdsNetworksConfig {
   rewardBronze: number;
   rewardSilver: number;
   rewardGold: number;
+  // LevelPlay mediation: when enabled, the Unity playlist slots are
+  // served through LevelPlay (the app ships the SDK from v1.15).
+  levelplayEnabled: boolean;
+  levelplayAppKey: string;
+  levelplayRewardedUnitId: string;
+  levelplayInterstitialUnitId: string;
 }
 
 const CONFIG_DEFAULTS: AdsNetworksConfig = {
@@ -49,6 +55,10 @@ const CONFIG_DEFAULTS: AdsNetworksConfig = {
   rewardBronze: 0.4,
   rewardSilver: 0.5,
   rewardGold: 0.6,
+  levelplayEnabled: false,
+  levelplayAppKey: '',
+  levelplayRewardedUnitId: '',
+  levelplayInterstitialUnitId: '',
 };
 
 const Toggle: React.FC<{ enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }> = ({ enabled, onChange, disabled }) => (
@@ -88,7 +98,7 @@ const AdNetworksPage: React.FC = () => {
     onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
       setCfg(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 })),
   });
-  const txt = (key: 'unityGameId' | 'unityRewardedPlacementId' | 'unityInterstitialPlacementId' | 'startioAppId') => ({
+  const txt = (key: 'unityGameId' | 'unityRewardedPlacementId' | 'unityInterstitialPlacementId' | 'startioAppId' | 'levelplayAppKey' | 'levelplayRewardedUnitId' | 'levelplayInterstitialUnitId') => ({
     value: cfg[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
       setCfg(prev => ({ ...prev, [key]: e.target.value })),
@@ -114,6 +124,10 @@ const AdNetworksPage: React.FC = () => {
         rewardBronze: cfg.rewardBronze,
         rewardSilver: cfg.rewardSilver,
         rewardGold: cfg.rewardGold,
+        levelplayEnabled: cfg.levelplayEnabled,
+        levelplayAppKey: cfg.levelplayAppKey.trim(),
+        levelplayRewardedUnitId: cfg.levelplayRewardedUnitId.trim(),
+        levelplayInterstitialUnitId: cfg.levelplayInterstitialUnitId.trim(),
       }, { merge: true });
       // Mirror to RTDB: the app reads the RTDB copy first (it is the
       // complete live mirror), so panel edits apply immediately.
@@ -135,6 +149,10 @@ const AdNetworksPage: React.FC = () => {
           rewardBronze: cfg.rewardBronze,
           rewardSilver: cfg.rewardSilver,
           rewardGold: cfg.rewardGold,
+          levelplayEnabled: cfg.levelplayEnabled,
+          levelplayAppKey: cfg.levelplayAppKey.trim(),
+          levelplayRewardedUnitId: cfg.levelplayRewardedUnitId.trim(),
+          levelplayInterstitialUnitId: cfg.levelplayInterstitialUnitId.trim(),
           updatedAt: new Date().toISOString(),
           updatedBy: 'Admin panel',
         });
@@ -279,6 +297,50 @@ const AdNetworksPage: React.FC = () => {
             <label className={labelCls}>Daily Limit per User</label>
             <input type="number" min="0" step="1" className={inputCls} {...num('startioDailyLimit')} />
             <p className={helpCls}>Maximum rewarded ads one user can earn from per day. 0 = unlimited.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* LevelPlay mediation */}
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-lg p-6 mt-6">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+              <MonitorPlay size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white">LevelPlay Mediation</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                When switched on, the app's Unity playlist slots are served through Unity LevelPlay
+                mediation instead of the direct Unity path — same slots, same rewards. Requires the
+                app build with the LevelPlay SDK (v1.15+). Keep OFF until that release is live.
+              </p>
+            </div>
+          </div>
+          <button onClick={save} disabled={saving} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition disabled:opacity-50 shrink-0">
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2">
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Enable LevelPlay Mediation</span>
+            <Toggle enabled={cfg.levelplayEnabled} onChange={(v) => setCfg(prev => ({ ...prev, levelplayEnabled: v }))} />
+          </div>
+          <div>
+            <label className={labelCls}>App Key</label>
+            <input className={inputCls} placeholder="From LevelPlay → your app → App Key" {...txt('levelplayAppKey')} />
+            <p className={helpCls}>The LevelPlay App Key of the TaskMint app.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Rewarded Video Ad Unit ID</label>
+            <input className={inputCls} placeholder="Rewarded Video ad unit ID" {...txt('levelplayRewardedUnitId')} />
+            <p className={helpCls}>Serves the playlist's rewarded slots when mediation is on.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Interstitial Ad Unit ID</label>
+            <input className={inputCls} placeholder="Interstitial ad unit ID" {...txt('levelplayInterstitialUnitId')} />
+            <p className={helpCls}>Used for the page-change interstitial when mediation is on.</p>
           </div>
         </div>
       </div>
