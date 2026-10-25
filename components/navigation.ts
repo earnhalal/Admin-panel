@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   PlayCircle,
   MonitorPlay,
+  Smartphone,
   Store,
   Ticket,
   Bot,
@@ -71,6 +72,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Users & Growth',
     items: [
       { path: '/users', label: 'Users', icon: Users, description: 'Manage user accounts, balances and status.' },
+      { path: '/app-analytics', label: 'App Analytics', icon: Smartphone, description: 'Installs, online users, active users and time spent in the Android app.' },
       { path: '/partner-program', label: 'Partner Program', icon: Handshake, description: 'Partner plans, requests and approvals.' },
       { path: '/partner-profiles', label: 'Partner Profiles', icon: Award, description: 'Partner accounts and their plan tiers.' },
       { path: '/referrals', label: 'Referrals', icon: Share2, description: 'Manage referral bonuses waiting to be paid.' },

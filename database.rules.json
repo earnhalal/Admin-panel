@@ -42,7 +42,12 @@
         "status": {
           ".write": "auth != null && ((auth.token.email === 'r83842009@gmail.com' || auth.token.email === 'muhammadwaseem2559@gmail.com') || newData.val() === 'pending' || newData.val() === data.val())"
         }
-      }
+      },
+      ".indexOn": [
+        "supportChatActive",
+        "supportChatLastMsgAt",
+        "liveAt"
+      ]
     },
     "withdrawals": {
       "$uid": {
